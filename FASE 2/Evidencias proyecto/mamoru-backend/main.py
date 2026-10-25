@@ -170,6 +170,11 @@ def inicio():
     return {"mensaje": "Mamoru API funcionando"}
 
 
+@app.get("/salud")
+def salud():
+    return {"estado": "ok"}
+
+
 @app.get("/salud-db")
 def salud_db(db: Session = Depends(get_db)):
     db.execute(text("SELECT 1"))
