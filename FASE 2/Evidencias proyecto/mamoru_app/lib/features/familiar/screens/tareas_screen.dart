@@ -6,44 +6,44 @@ import '../state/familiar_contexto.dart';
 import 'nueva_actividad_screen.dart';
 import 'seguimiento_screen.dart';
 import '../widgets/familiar_bottom_nav.dart';
-
+ 
 class TareasScreen extends StatefulWidget {
   const TareasScreen({super.key});
-
+ 
   @override
   State<TareasScreen> createState() => _TareasScreenState();
 }
-
+ 
 enum _Filtro { todas, pendientes, completadas, noRealizadas }
-
+ 
 class _TareasScreenState extends State<TareasScreen> {
   DateTime _fechaSeleccionada = DateTime.now();
   _Filtro _filtro = _Filtro.todas;
-
+ 
   List<Actividad> _actividades = [];
   bool _cargando = true;
   String? _error;
-
+ 
   @override
   void initState() {
     super.initState();
     _cargar();
   }
-
+ 
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _error = null;
     });
-
+ 
     try {
       await FamiliarContexto.cargar();
-
+ 
       final adulto = FamiliarContexto.seleccionado;
       final lista = adulto == null ? <Actividad>[] : await TareasService.listar(adulto.id);
-
+ 
       if (!mounted) return;
-
+ 
       setState(() {
         _actividades = lista;
         _cargando = false;
@@ -56,7 +56,7 @@ class _TareasScreenState extends State<TareasScreen> {
       });
     }
   }
-
+ 
   Future<void> _nuevaActividad() async {
     if (FamiliarContexto.seleccionado == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -67,20 +67,20 @@ class _TareasScreenState extends State<TareasScreen> {
       );
       return;
     }
-
+ 
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const NuevaActividadScreen()));
     if (mounted) _cargar();
   }
-
+ 
   DateTime get _fechaMinimaFiltro => DateTime(2026, 1, 1);
   DateTime get _fechaMaximaFiltro => DateTime(DateTime.now().year + 1, 12, 31);
-
+ 
   List<Actividad> get _actividadesDelDia {
     final delDia = _actividades.where((a) =>
         a.fechaHora.year == _fechaSeleccionada.year &&
         a.fechaHora.month == _fechaSeleccionada.month &&
         a.fechaHora.day == _fechaSeleccionada.day);
-
+ 
     switch (_filtro) {
       case _Filtro.todas:
         return delDia.toList();
@@ -92,7 +92,7 @@ class _TareasScreenState extends State<TareasScreen> {
         return delDia.where((a) => a.estado == EstadoTarea.noRealizada).toList();
     }
   }
-
+ 
   Future<void> _elegirFecha() async {
     final nuevaFecha = await showDatePicker(
       context: context,
@@ -102,12 +102,12 @@ class _TareasScreenState extends State<TareasScreen> {
     );
     if (nuevaFecha != null) setState(() => _fechaSeleccionada = nuevaFecha);
   }
-
+ 
   String _formatearFecha(DateTime fecha) {
     String d(int n) => n.toString().padLeft(2, '0');
     return '${d(fecha.day)}-${d(fecha.month)}-${fecha.year}';
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -195,7 +195,7 @@ class _TareasScreenState extends State<TareasScreen> {
                           ),
                         )
                       : _actividadesDelDia.isEmpty
-                          ? const Center(child: Text('No hay actividades para este dÃa.', style: TextStyle(color: Colors.grey)))
+                          ? const Center(child: Text('No hay actividades para este día.', style: TextStyle(color: Colors.grey)))
                           : ListView.separated(
                       itemCount: _actividadesDelDia.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -208,14 +208,14 @@ class _TareasScreenState extends State<TareasScreen> {
     );
   }
 }
-
+ 
 class _ChipFiltro extends StatelessWidget {
   final String texto;
   final bool seleccionado;
   final VoidCallback onTap;
-
+ 
   const _ChipFiltro({required this.texto, required this.seleccionado, required this.onTap});
-
+ 
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -232,21 +232,25 @@ class _ChipFiltro extends StatelessWidget {
     );
   }
 }
-
+ 
 class _TarjetaActividad extends StatelessWidget {
   final Actividad actividad;
-
+ 
   const _TarjetaActividad({required this.actividad});
-
+ 
   String _formatearHora(DateTime fecha) {
     String d(int n) => n.toString().padLeft(2, '0');
     return '${d(fecha.hour)}:${d(fecha.minute)} hrs';
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final completada = actividad.estado == EstadoTarea.realizada;
-
+    final noRealizada = actividad.estado == EstadoTarea.noRealizada;
+    final colorEstado = completada ? Colors.green : (noRealizada ? Colors.red : Colors.orange);
+    final textoEstado = completada ? 'Realizada' : (noRealizada ? 'No realizada' : 'Pendiente');
+    final iconoEstado = completada ? Icons.check_circle : (noRealizada ? Icons.cancel : Icons.hourglass_top);
+ 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -283,15 +287,11 @@ class _TarjetaActividad extends StatelessWidget {
                     ),
                     Row(
                       children: [
-                        Icon(
-                          completada ? Icons.check_circle : Icons.hourglass_top,
-                          size: 14,
-                          color: completada ? Colors.green : Colors.orange,
-                        ),
+                        Icon(iconoEstado, size: 14, color: colorEstado),
                         const SizedBox(width: 4),
                         Text(
-                          completada ? 'Realizada' : 'Pendiente',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: completada ? Colors.green : Colors.orange),
+                          textoEstado,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: colorEstado),
                         ),
                       ],
                     ),

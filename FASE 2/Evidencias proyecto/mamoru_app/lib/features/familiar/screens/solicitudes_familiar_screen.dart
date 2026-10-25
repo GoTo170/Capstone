@@ -3,6 +3,7 @@ import '../../shared/chat/chat_screen.dart';
 import '../../../core/api_exception.dart';
 import '../models/solicitud_enviada.dart';
 import '../services/marketplace_service.dart';
+import 'valorar_servicio_sheet.dart';
  
 class SolicitudesFamiliarScreen extends StatefulWidget {
   const SolicitudesFamiliarScreen({super.key});
@@ -150,7 +151,7 @@ class _SolicitudesFamiliarScreenState extends State<SolicitudesFamiliarScreen> {
                   if (mostrarFinalizadas && finalizadas.isNotEmpty) ...[
                     _EtiquetaSeccion(texto: 'FINALIZADA (${finalizadas.length})'),
                     const SizedBox(height: 10),
-                    for (final s in finalizadas) ...[_TarjetaSolicitud(solicitud: s), const SizedBox(height: 12)],
+                    for (final s in finalizadas) ...[_TarjetaSolicitud(solicitud: s, onValorada: _cargar), const SizedBox(height: 12)],
                   ],
                 ],
               ),
@@ -195,7 +196,8 @@ class _EtiquetaSeccion extends StatelessWidget {
  
 class _TarjetaSolicitud extends StatelessWidget {
   final SolicitudEnviada solicitud;
-  const _TarjetaSolicitud({required this.solicitud});
+  final VoidCallback? onValorada;
+  const _TarjetaSolicitud({required this.solicitud, this.onValorada});
  
   Color get _color {
     switch (solicitud.estado) {
@@ -267,6 +269,34 @@ class _TarjetaSolicitud extends StatelessWidget {
             const SizedBox(height: 6),
             Text('Motivo: ${solicitud.motivoRechazo}', style: const TextStyle(fontSize: 12, color: Colors.red)),
           ],
+          if (solicitud.estado == EstadoSolicitudEnviada.finalizada) ...[
+            const SizedBox(height: 10),
+            if (solicitud.valoracion != null)
+              Row(
+                children: [
+                  const Text('Tu valoración: ', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                  for (int i = 1; i <= 5; i++)
+                    Icon(i <= solicitud.valoracion! ? Icons.star : Icons.star_border, size: 18, color: Colors.amber),
+                ],
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final enviada = await mostrarValoracion(
+                      context,
+                      solicitudId: solicitud.id,
+                      nombreCuidador: solicitud.nombreCuidador,
+                    );
+                    if (enviada == true) onValorada?.call();
+                  },
+                  icon: const Icon(Icons.star_border),
+                  label: const Text('Valorar al cuidador'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.pink, foregroundColor: Colors.white),
+                ),
+              ),
+          ],
           if (solicitud.estado == EstadoSolicitudEnviada.aceptada) ...[
             const SizedBox(height: 10),
             SizedBox(
@@ -274,7 +304,12 @@ class _TarjetaSolicitud extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => ChatScreen(nombreContacto: solicitud.nombreCuidador, subtitulo: 'Chat del servicio activo')),
+                  MaterialPageRoute(builder: (_) => ChatScreen(
+                    solicitudId: solicitud.id,
+                    nombreContacto: solicitud.nombreCuidador,
+                    subtitulo: 'Servicio para ${solicitud.nombreAdultoMayor}',
+                    ),
+                  ),
                 ),
                 style: OutlinedButton.styleFrom(foregroundColor: Colors.pink, side: const BorderSide(color: Colors.pink)),
                 child: const Text('Abrir chat'),

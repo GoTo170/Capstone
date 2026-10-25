@@ -1,75 +1,76 @@
 import 'package:flutter/material.dart';
-
+ 
 import '../../../core/api_exception.dart';
 import '../models/actividad_cuidador.dart';
 import '../services/cuidador_service.dart';
 import '../widgets/cuidador_bottom_nav.dart';
+import '../../familiar/screens/acciones_horario.dart';
 import 'agregar_observacion_screen.dart';
-
+ 
 class ActividadesCuidadorScreen extends StatefulWidget {
   final List<ActividadCuidador> actividades;
-
+ 
   /// Si viene null, muestra las actividades de todos los adultos mayores
   /// para los que el cuidador tiene un servicio vigente.
   ///
   /// Si viene un ID, muestra solamente las actividades de ese adulto mayor.
   final String? adultoMayorId;
-
+ 
   const ActividadesCuidadorScreen({
     super.key,
     this.actividades = const [],
     this.adultoMayorId,
   });
-
+ 
   @override
   State<ActividadesCuidadorScreen> createState() =>
       _ActividadesCuidadorScreenState();
 }
-
+ 
 enum _Filtro {
   todas,
   pendientes,
   realizadas,
 }
-
+ 
 class _ActividadesCuidadorScreenState
     extends State<ActividadesCuidadorScreen> {
   _Filtro _filtro = _Filtro.todas;
-
+ 
   String? _idExpandido;
   String? _idGuardando;
-
+ 
   List<ActividadCuidador> _actividades = [];
-
+ 
   bool _cargando = true;
   String? _error;
-
+ 
   String _nombreCuidador = 'Cuidador/a';
-
+ 
   @override
   void initState() {
     super.initState();
-
+ 
     // Si otra pantalla entregó actividades,
     // se muestran temporalmente mientras se consulta el backend.
     _actividades = List<ActividadCuidador>.from(
       widget.actividades,
     );
-
+ 
     _cargarActividades();
     _cargarNombreCuidador();
   }
-
+ 
   // ============================================================
   // Nombre del cuidador
   // ============================================================
-
+ 
   Future<void> _cargarNombreCuidador() async {
     try {
       final perfil = await CuidadorService.miPerfil();
-
+ 
       if (!mounted) return;
-
+ 
       if (perfil.nombre.trim().isNotEmpty) {
         setState(() {
           _nombreCuidador = perfil.nombre.trim();
@@ -79,11 +80,11 @@ class _ActividadesCuidadorScreenState
       // Si falla solamente el nombre, la pantalla puede seguir funcionando.
     }
   }
-
+ 
   // ============================================================
   // Cargar actividades desde FastAPI
   // ============================================================
-
+ 
   Future<void> _cargarActividades({
     bool mostrarCarga = true,
   }) async {
@@ -93,13 +94,13 @@ class _ActividadesCuidadorScreenState
         _error = null;
       });
     }
-
+ 
     try {
       final actividades =
           await CuidadorService.listarActividades();
-
+ 
       if (!mounted) return;
-
+ 
       setState(() {
         _actividades = actividades;
         _cargando = false;
@@ -107,64 +108,64 @@ class _ActividadesCuidadorScreenState
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-
+ 
       setState(() {
         _cargando = false;
         _error = e.mensaje;
       });
     } catch (_) {
       if (!mounted) return;
-
+ 
       setState(() {
         _cargando = false;
         _error = 'No se pudieron cargar las actividades.';
       });
     }
   }
-
+ 
   // ============================================================
   // Filtros
   // ============================================================
-
+ 
   bool _esHoy(DateTime fecha) {
     final hoy = DateTime.now();
-
+ 
     return fecha.year == hoy.year &&
         fecha.month == hoy.month &&
         fecha.day == hoy.day;
   }
-
+ 
   List<ActividadCuidador> get _actividadesHoy {
     final lista = _actividades.where((actividad) {
       // Solo mostramos las actividades del día actual.
       if (!_esHoy(actividad.horaProgramada)) {
         return false;
       }
-
+ 
       // Si entramos desde el detalle de un servicio,
       // mostramos solo las actividades de ese adulto mayor.
       if (widget.adultoMayorId != null &&
           actividad.adultoMayorId != widget.adultoMayorId) {
         return false;
       }
-
+ 
       return true;
     }).toList();
-
+ 
     lista.sort(
       (a, b) => a.horaProgramada.compareTo(
         b.horaProgramada,
       ),
     );
-
+ 
     return lista;
   }
-
+ 
   List<ActividadCuidador> get _filtradas {
     switch (_filtro) {
       case _Filtro.todas:
         return _actividadesHoy;
-
+ 
       case _Filtro.pendientes:
         return _actividadesHoy
             .where(
@@ -173,7 +174,7 @@ class _ActividadesCuidadorScreenState
                   EstadoActividadCuidador.pendiente,
             )
             .toList();
-
+ 
       case _Filtro.realizadas:
         return _actividadesHoy
             .where(
@@ -184,11 +185,11 @@ class _ActividadesCuidadorScreenState
             .toList();
     }
   }
-
+ 
   // ============================================================
   // Fecha
   // ============================================================
-
+ 
   String get _fechaFormateada {
     const dias = [
       'Lunes',
@@ -199,7 +200,7 @@ class _ActividadesCuidadorScreenState
       'Sábado',
       'Domingo',
     ];
-
+ 
     const meses = [
       'enero',
       'febrero',
@@ -214,18 +215,18 @@ class _ActividadesCuidadorScreenState
       'noviembre',
       'diciembre',
     ];
-
+ 
     final ahora = DateTime.now();
-
+ 
     return '${dias[ahora.weekday - 1]}, '
         '${ahora.day} de '
         '${meses[ahora.month - 1]}';
   }
-
+ 
   // ============================================================
   // Cambiar estado
   // ============================================================
-
+ 
   Future<void> _cambiarEstado(
     ActividadCuidador actividad,
     EstadoActividadCuidador nuevoEstado,
@@ -234,7 +235,7 @@ class _ActividadesCuidadorScreenState
     if (_idGuardando == actividad.id) {
       return;
     }
-
+ 
     // Si la actividad ya tenía un estado,
     // pedimos confirmación antes de modificarlo.
     if (actividad.estado != EstadoActividadCuidador.pendiente) {
@@ -266,16 +267,16 @@ class _ActividadesCuidadorScreenState
           ],
         ),
       );
-
+ 
       if (confirmar != true) {
         return;
       }
     }
-
+ 
     setState(() {
       _idGuardando = actividad.id;
     });
-
+ 
     try {
       // El estado se guarda primero en el backend.
       final fechaConfirmacion =
@@ -283,19 +284,19 @@ class _ActividadesCuidadorScreenState
         actividad.id,
         nuevoEstado,
       );
-
+ 
       if (!mounted) return;
-
+ 
       setState(() {
         actividad.estado = nuevoEstado;
-
+ 
         actividad.horaRegistroEstado =
             fechaConfirmacion ?? DateTime.now();
-
+ 
         _idExpandido = null;
         _idGuardando = null;
       });
-
+ 
       // Si una actividad no se realizó,
       // se abre el formulario de observación.
       if (nuevoEstado == EstadoActividadCuidador.noRealizada) {
@@ -307,18 +308,18 @@ class _ActividadesCuidadorScreenState
             ),
           ),
         );
-
+ 
         if (!mounted) return;
-
+ 
         setState(() {});
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-
+ 
       setState(() {
         _idGuardando = null;
       });
-
+ 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.mensaje),
@@ -326,11 +327,11 @@ class _ActividadesCuidadorScreenState
       );
     } catch (_) {
       if (!mounted) return;
-
+ 
       setState(() {
         _idGuardando = null;
       });
-
+ 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -340,26 +341,26 @@ class _ActividadesCuidadorScreenState
       );
     }
   }
-
+ 
   String _etiquetaEstado(
     EstadoActividadCuidador estado,
   ) {
     switch (estado) {
       case EstadoActividadCuidador.pendiente:
         return 'Pendiente';
-
+ 
       case EstadoActividadCuidador.realizada:
         return 'Realizada';
-
+ 
       case EstadoActividadCuidador.noRealizada:
         return 'No realizada';
     }
   }
-
+ 
   // ============================================================
   // Observaciones
   // ============================================================
-
+ 
   Future<void> _abrirObservacion(
     ActividadCuidador actividad,
   ) async {
@@ -371,20 +372,20 @@ class _ActividadesCuidadorScreenState
         ),
       ),
     );
-
+ 
     if (!mounted) return;
-
+ 
     setState(() {});
   }
-
+ 
   // ============================================================
   // Build
   // ============================================================
-
+ 
   @override
   Widget build(BuildContext context) {
     final todas = _actividadesHoy.length;
-
+ 
     final pendientes = _actividadesHoy
         .where(
           (actividad) =>
@@ -392,7 +393,7 @@ class _ActividadesCuidadorScreenState
               EstadoActividadCuidador.pendiente,
         )
         .length;
-
+ 
     final realizadas = _actividadesHoy
         .where(
           (actividad) =>
@@ -400,17 +401,17 @@ class _ActividadesCuidadorScreenState
               EstadoActividadCuidador.realizada,
         )
         .length;
-
+ 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF7F5),
-
+ 
       bottomNavigationBar: CuidadorBottomNav(
         seleccionada: PestanaCuidador.actividades,
         nombreCuidador: _nombreCuidador,
         servicio: null,
         actividades: _actividades,
       ),
-
+ 
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -420,7 +421,7 @@ class _ActividadesCuidadorScreenState
               // ==================================================
               // Encabezado
               // ==================================================
-
+ 
               Row(
                 children: [
                   IconButton(
@@ -454,13 +455,13 @@ class _ActividadesCuidadorScreenState
                   ),
                 ],
               ),
-
+ 
               const SizedBox(height: 14),
-
+ 
               // ==================================================
               // Filtros
               // ==================================================
-
+ 
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -502,13 +503,13 @@ class _ActividadesCuidadorScreenState
                   ],
                 ),
               ),
-
+ 
               const SizedBox(height: 14),
-
+ 
               // ==================================================
               // Lista
               // ==================================================
-
+ 
               Expanded(
                 child: _construirLista(),
               ),
@@ -518,18 +519,18 @@ class _ActividadesCuidadorScreenState
       ),
     );
   }
-
+ 
   // ============================================================
   // Lista
   // ============================================================
-
+ 
   Widget _construirLista() {
     if (_cargando) {
       return const Center(
         child: CircularProgressIndicator(),
       );
     }
-
+ 
     if (_error != null) {
       return Center(
         child: Padding(
@@ -571,7 +572,7 @@ class _ActividadesCuidadorScreenState
         ),
       );
     }
-
+ 
     if (_filtradas.isEmpty) {
       return RefreshIndicator(
         onRefresh: () => _cargarActividades(),
@@ -591,7 +592,7 @@ class _ActividadesCuidadorScreenState
         ),
       );
     }
-
+ 
     return RefreshIndicator(
       onRefresh: () => _cargarActividades(),
       child: ListView.separated(
@@ -601,64 +602,67 @@ class _ActividadesCuidadorScreenState
             const SizedBox(height: 10),
         itemBuilder: (context, index) {
           final actividad = _filtradas[index];
-
+ 
           return _TarjetaActividadCuidador(
             actividad: actividad,
             expandido:
                 _idExpandido == actividad.id,
-
+ 
             onTapRegistrar: () {
               setState(() {
                 _idExpandido = actividad.id;
               });
             },
-
+ 
             onCerrar: () {
               setState(() {
                 _idExpandido = null;
               });
             },
-
+ 
             onMarcarRealizada: () =>
                 _cambiarEstado(
               actividad,
               EstadoActividadCuidador.realizada,
             ),
-
+ 
             onMarcarNoRealizada: () =>
                 _cambiarEstado(
               actividad,
               EstadoActividadCuidador.noRealizada,
             ),
-
+ 
             onVerAgregarObservacion: () =>
                 _abrirObservacion(
               actividad,
             ),
+ 
+            onAdelantada: () =>
+                _cargarActividades(mostrarCarga: false),
           );
         },
       ),
     );
   }
 }
-
+ 
 // ============================================================
 // Chip de filtro
 // ============================================================
-
+ 
 class _ChipFiltro extends StatelessWidget {
   final String texto;
   final bool seleccionado;
   final Color color;
   final VoidCallback onTap;
-
+ 
   const _ChipFiltro({
     required this.texto,
     required this.seleccionado,
     required this.onTap,
     this.color = Colors.pink,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -688,21 +692,22 @@ class _ChipFiltro extends StatelessWidget {
     );
   }
 }
-
+ 
 // ============================================================
 // Tarjeta de actividad
 // ============================================================
-
+ 
 class _TarjetaActividadCuidador extends StatelessWidget {
   final ActividadCuidador actividad;
   final bool expandido;
-
+ 
   final VoidCallback onTapRegistrar;
   final VoidCallback onCerrar;
   final VoidCallback onMarcarRealizada;
   final VoidCallback onMarcarNoRealizada;
   final VoidCallback onVerAgregarObservacion;
-
+  final VoidCallback onAdelantada;
+ 
   const _TarjetaActividadCuidador({
     required this.actividad,
     required this.expandido,
@@ -711,33 +716,34 @@ class _TarjetaActividadCuidador extends StatelessWidget {
     required this.onMarcarRealizada,
     required this.onMarcarNoRealizada,
     required this.onVerAgregarObservacion,
+    required this.onAdelantada,
   });
-
+ 
   String _formatearHora(DateTime fecha) {
     String d(int numero) =>
         numero.toString().padLeft(2, '0');
-
+ 
     return '${d(fecha.hour)}:${d(fecha.minute)}';
   }
-
+ 
   Color get _colorBorde {
     switch (actividad.estado) {
       case EstadoActividadCuidador.realizada:
         return Colors.green.shade200;
-
+ 
       case EstadoActividadCuidador.noRealizada:
         return Colors.red.shade200;
-
+ 
       case EstadoActividadCuidador.pendiente:
         return Colors.orange.shade100;
     }
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final tieneObservaciones =
         actividad.observaciones.isNotEmpty;
-
+ 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -753,7 +759,7 @@ class _TarjetaActividadCuidador extends StatelessWidget {
           // ====================================================
           // Título, descripción y estado
           // ====================================================
-
+ 
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -775,7 +781,7 @@ class _TarjetaActividadCuidador extends StatelessWidget {
                   color: actividad.tipo.color,
                 ),
               ),
-
+ 
               Expanded(
                 child: Column(
                   crossAxisAlignment:
@@ -787,7 +793,7 @@ class _TarjetaActividadCuidador extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-
+ 
                     if (actividad.descripcion != null &&
                         actividad.descripcion!
                             .trim()
@@ -807,21 +813,21 @@ class _TarjetaActividadCuidador extends StatelessWidget {
                   ],
                 ),
               ),
-
+ 
               const SizedBox(width: 8),
-
+ 
               _EtiquetaEstado(
                 estado: actividad.estado,
               ),
             ],
           ),
-
+ 
           const SizedBox(height: 8),
-
+ 
           // ====================================================
           // Hora programada
           // ====================================================
-
+ 
           Row(
             children: [
               const Icon(
@@ -841,11 +847,11 @@ class _TarjetaActividadCuidador extends StatelessWidget {
               ),
             ],
           ),
-
+ 
           // ====================================================
           // Hora de confirmación
           // ====================================================
-
+ 
           if (actividad.estado !=
                   EstadoActividadCuidador.pendiente &&
               actividad.horaRegistroEstado != null) ...[
@@ -881,11 +887,11 @@ class _TarjetaActividadCuidador extends StatelessWidget {
               ],
             ),
           ],
-
+ 
           // ====================================================
           // Observaciones
           // ====================================================
-
+ 
           if (tieneObservaciones) ...[
             const SizedBox(height: 6),
             const Row(
@@ -906,13 +912,13 @@ class _TarjetaActividadCuidador extends StatelessWidget {
               ],
             ),
           ],
-
+ 
           const SizedBox(height: 10),
-
+ 
           // ====================================================
           // Registrar estado
           // ====================================================
-
+ 
           if (actividad.estado ==
               EstadoActividadCuidador.pendiente) ...[
             if (!expandido)
@@ -944,9 +950,9 @@ class _TarjetaActividadCuidador extends StatelessWidget {
                       ),
                     ),
                   ),
-
+ 
                   const SizedBox(width: 8),
-
+ 
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: onMarcarNoRealizada,
@@ -965,7 +971,7 @@ class _TarjetaActividadCuidador extends StatelessWidget {
                       ),
                     ),
                   ),
-
+ 
                   IconButton(
                     icon: const Icon(
                       Icons.close,
@@ -1007,11 +1013,28 @@ class _TarjetaActividadCuidador extends StatelessWidget {
                 ),
               ),
             ),
+ 
+          // ====================================================
+          // Adelantar (flexibles) o avisar (horario estricto)
+          // ====================================================
+ 
+          if (actividad.estado ==
+              EstadoActividadCuidador.pendiente) ...[
+            const SizedBox(height: 4),
+            AccionesHorario(
+              id: actividad.id,
+              titulo: actividad.titulo,
+              categoria: actividad.tipo.name,
+              horaProgramada: actividad.horaProgramada,
+              pendiente: true,
+              onAdelantada: onAdelantada,
+            ),
+          ],
         ],
       ),
     );
   }
-
+ 
   String _etiquetaCorta(
     EstadoActividadCuidador estado,
   ) {
@@ -1019,48 +1042,48 @@ class _TarjetaActividadCuidador extends StatelessWidget {
         EstadoActividadCuidador.realizada) {
       return 'Realizada';
     }
-
+ 
     return 'Marcada como no realizada';
   }
 }
-
+ 
 // ============================================================
 // Estado visual
 // ============================================================
-
+ 
 class _EtiquetaEstado extends StatelessWidget {
   final EstadoActividadCuidador estado;
-
+ 
   const _EtiquetaEstado({
     required this.estado,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     late final String texto;
     late final Color color;
     late final IconData icono;
-
+ 
     switch (estado) {
       case EstadoActividadCuidador.pendiente:
         texto = 'Pendiente';
         color = Colors.orange;
         icono = Icons.hourglass_top;
         break;
-
+ 
       case EstadoActividadCuidador.realizada:
         texto = 'Realizada';
         color = Colors.green;
         icono = Icons.check_circle;
         break;
-
+ 
       case EstadoActividadCuidador.noRealizada:
         texto = 'No realizada';
         color = Colors.red;
         icono = Icons.cancel;
         break;
     }
-
+ 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

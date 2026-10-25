@@ -37,12 +37,13 @@ class MarketplaceService {
   }
  
   /// Solicitudes enviadas por el familiar, de la más nueva a la más antigua.
+   /// Solicitudes enviadas por el familiar, de la más nueva a la más antigua.
   static Future<List<SolicitudEnviada>> listarSolicitudes() async {
     final datos = await ApiClient.get('/familiar/solicitudes') as List<dynamic>;
- 
+
     return datos.map((item) {
       final s = item as Map<String, dynamic>;
- 
+
       final estadoTexto = s['estado'] as String;
       final estado = estadoTexto == 'aceptada'
           ? EstadoSolicitudEnviada.aceptada
@@ -51,8 +52,9 @@ class MarketplaceService {
               : estadoTexto == 'finalizada'
                   ? EstadoSolicitudEnviada.finalizada
                   : EstadoSolicitudEnviada.pendiente;
- 
+
       return SolicitudEnviada(
+        id: s['id'] as String,
         nombreCuidador: s['cuidador_nombre'] as String,
         nombreAdultoMayor: s['adulto_mayor_nombre'] as String,
         fechaTexto: _textoFechas(s['fecha_inicio'] as String?, s['fecha_termino'] as String?),
@@ -60,10 +62,24 @@ class MarketplaceService {
         servicio: nombreServicio(s['tipo_servicio'] as String?),
         estado: estado,
         motivoRechazo: _textoMotivo(s['motivo_rechazo'] as String?, s['motivo_rechazo_detalle'] as String?),
+        valoracion: s['valoracion_puntuacion'] as int?,
       );
     }).toList();
   }
- 
+  
+  /// Envía la valoración (1 a 5) de un servicio finalizado.
+  static Future<void> valorarServicio({
+    required String solicitudId,
+    required int puntuacion,
+    String? comentario,
+  }) async {
+    final texto = comentario?.trim() ?? '';
+    await ApiClient.post('/valoraciones', {
+      'solicitud_id': solicitudId,
+      'puntuacion': puntuacion,
+      if (texto.isNotEmpty) 'comentario': texto,
+    });
+  }
   // ------------------------------------------------------------ nombres
  
   /// Los 5 tipos que se pueden pedir hoy (el sexto, "puertas adentro", se

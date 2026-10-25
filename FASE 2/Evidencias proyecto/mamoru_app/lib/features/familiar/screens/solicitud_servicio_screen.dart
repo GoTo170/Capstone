@@ -1228,12 +1228,17 @@ class _SolicitudServicioScreenState
                       _formularioFueEnviado &&
                           !_tipoValido,
                 ),
-                items: MarketplaceService.tiposServicio.entries.map(
-                  (tipo) {
+                isExpanded: true,
+                // Solo los servicios que el cuidador marcó en su perfil,
+                // con el mismo nombre que ahí tienen.
+                items: widget.cuidador.servicios.toSet().map(
+                  (nombre) {
                     return DropdownMenuItem<String>(
-                      value: tipo.key,
+                      value: nombre,
                       child: Text(
-                        tipo.value,
+                        nombre,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13),
                       ),
                     );

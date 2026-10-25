@@ -81,6 +81,9 @@ class Actividad {
   final DateTime? horaRegistroEstado;
   final String? observacionCuidador;
   final DateTime? horaObservacion;
+  final String? completadaPorRol; // adulto_mayor, cuidador, sistema, administrador (null = sin dato)
+  final DateTime? horaOriginal; // hora que tenía antes de adelantarla (null = nunca se adelantó)
+  final bool esFlexible; // true: se puede adelantar; false: horario estricto
  
   const Actividad({
     this.id,
@@ -92,6 +95,9 @@ class Actividad {
     this.horaRegistroEstado,
     this.observacionCuidador,
     this.horaObservacion,
+    this.completadaPorRol,
+    this.horaOriginal,
+    this.esFlexible = false,
   });
  
   Actividad copyWith({
@@ -99,6 +105,7 @@ class Actividad {
     DateTime? horaRegistroEstado,
     String? observacionCuidador,
     DateTime? horaObservacion,
+    String? completadaPorRol,
   }) {
     return Actividad(
       id: id,
@@ -110,6 +117,9 @@ class Actividad {
       horaRegistroEstado: horaRegistroEstado ?? this.horaRegistroEstado,
       observacionCuidador: observacionCuidador ?? this.observacionCuidador,
       horaObservacion: horaObservacion ?? this.horaObservacion,
+      completadaPorRol: completadaPorRol ?? this.completadaPorRol,
+      horaOriginal: horaOriginal,
+      esFlexible: esFlexible,
     );
   }
 }
