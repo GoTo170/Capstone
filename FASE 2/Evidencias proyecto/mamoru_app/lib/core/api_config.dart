@@ -8,5 +8,5 @@ class ApiConfig {
   ///
   /// Para el emulador de Android sin puente, usar `http://10.0.2.2:8000`.
   /// Cuando el backend esté desplegado, aquí va su dirección https.
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'https://mamoru-backend.onrender.com';
 }
