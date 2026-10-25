@@ -1,0 +1,35 @@
+# ===== Secretos (NUNCA subir) =====
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+serviceAccountKey.json
+mamoru-firebase-key.json
+
+# ===== Backend (Python / FastAPI) =====
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# ===== Panel admin (React / Vite) =====
+node_modules/
+dist/
+
+# ===== App móvil (Flutter) =====
+mamoru_app/build/
+mamoru_app/.dart_tool/
+mamoru_app/.flutter-plugins
+mamoru_app/.flutter-plugins-dependencies
+mamoru_app/android/.gradle/
+mamoru_app/android/local.properties
+mamoru_app/ios/Pods/
+
+# ===== Sistema / editor =====
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+mamoru-db/export/
+mamoru_app/codigo.txt
+
