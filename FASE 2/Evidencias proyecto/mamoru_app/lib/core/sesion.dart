@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-
+ 
 import 'package:shared_preferences/shared_preferences.dart';
-
+ 
+import 'push_service.dart';
+ 
 /// Datos básicos del usuario que inició sesión.
 class UsuarioSesion {
   final String id;
@@ -11,7 +13,7 @@ class UsuarioSesion {
   final String? email;
   final String rol;
   final String? telefono;
-
+ 
   const UsuarioSesion({
     required this.id,
     required this.nombre,
@@ -20,7 +22,7 @@ class UsuarioSesion {
     required this.rol,
     this.telefono,
   });
-
+ 
   factory UsuarioSesion.fromJson(Map<String, dynamic> json) {
     return UsuarioSesion(
       id: json['id'] as String,
@@ -31,7 +33,7 @@ class UsuarioSesion {
       telefono: json['telefono'] as String?,
     );
   }
-
+ 
   Map<String, dynamic> toJson() => {
         'id': id,
         'nombre': nombre,
@@ -40,13 +42,13 @@ class UsuarioSesion {
         'rol': rol,
         'telefono': telefono,
       };
-
+ 
   String get nombreCompleto {
     final a = apellido;
     return (a == null || a.isEmpty) ? nombre : '$nombre $a';
   }
 }
-
+ 
 /// Sesión actual de la app (token + usuario).
 ///
 /// Se guarda también en el teléfono, así al cerrar y volver a abrir la app
@@ -55,22 +57,22 @@ class UsuarioSesion {
 class Sesion {
   static const String _claveToken = 'mamoru_token';
   static const String _claveUsuario = 'mamoru_usuario';
-
+ 
   static String? _token;
   static UsuarioSesion? _usuario;
-
+ 
   static String? get token => _token;
   static UsuarioSesion? get usuario => _usuario;
   static bool get activa => _token != null;
-
+ 
   /// Lee la sesión guardada en el teléfono. Se llama una vez al abrir la app.
   static Future<void> cargar() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_claveToken);
     final usuarioJson = prefs.getString(_claveUsuario);
-
+ 
     if (token == null || usuarioJson == null) return;
-
+ 
     try {
       _usuario = UsuarioSesion.fromJson(
         jsonDecode(usuarioJson) as Map<String, dynamic>,
@@ -84,25 +86,32 @@ class Sesion {
       await prefs.remove(_claveUsuario);
     }
   }
-
+ 
   /// Guarda la sesión en memoria y en el teléfono.
   static Future<void> iniciar(String token, UsuarioSesion usuario) async {
     _token = token;
     _usuario = usuario;
-
+ 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_claveToken, token);
     await prefs.setString(_claveUsuario, jsonEncode(usuario.toJson()));
   }
-
+ 
   /// Cierra la sesión. En memoria es inmediato; el borrado en el teléfono
   /// continúa en segundo plano.
   static void cerrar() {
+    final tokenAnterior = _token;
     _token = null;
     _usuario = null;
+ 
+    // Este celular deja de recibir los avisos push de la cuenta que se cierra.
+    if (tokenAnterior != null) {
+      unawaited(PushService.quitarDispositivo(tokenAnterior));
+    }
+ 
     unawaited(_borrarGuardado());
   }
-
+ 
   static Future<void> _borrarGuardado() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_claveToken);

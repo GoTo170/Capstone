@@ -43,6 +43,8 @@ dependencies:
     sdk: flutter
   shared_preferences: ^2.5.5
   mobile_scanner: ^7.4.2
+  firebase_core: ^5.1.0
+  firebase_messaging: ^17.0.1
 
 
 dev_dependencies:

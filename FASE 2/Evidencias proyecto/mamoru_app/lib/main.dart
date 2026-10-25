@@ -8,13 +8,14 @@ import 'features/auth/screens/login_screen.dart';
 import 'features/auth/services/auth_service.dart';
 import 'features/cuidador/screens/inicio_cuidador_screen.dart';
 import 'features/familiar/screens/home_screen.dart';
+import 'core/push_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Lee del teléfono la sesión guardada (si la hay).
   await Sesion.cargar();
-  
+  await PushService.iniciar();
 
   runApp(const MamoruApp());
 }
