@@ -2,16 +2,22 @@ import 'package:flutter/material.dart';
 
 import '../../../core/api_exception.dart';
 import '../../../core/sesion.dart';
+import '../../shared/chat/chat_fab.dart';
 import '../../shared/services/notificaciones_service.dart';
 import '../models/actividad.dart';
+import '../models/solicitud_enviada.dart';
 import '../services/familiar_service.dart';
 import '../services/tareas_service.dart';
+import '../services/marketplace_service.dart';
 import '../state/familiar_contexto.dart';
 import '../widgets/familiar_bottom_nav.dart';
 import '../widgets/menu_navegacion_button.dart';
 import 'alertas_screen.dart';
 import 'tareas_screen.dart';
 import 'vincular_screen.dart';
+import 'solicitudes_familiar_screen.dart';
+
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _error;
   List<Actividad> _actividades = [];
   List<NotificacionApp> _notificaciones = [];
+  int _porValorar = 0; // servicios finalizados que aún no se valoran
 
   @override
   void initState() {
@@ -45,11 +52,21 @@ class _HomeScreenState extends State<HomeScreen> {
       final actividades = adulto == null ? <Actividad>[] : await TareasService.listar(adulto.id);
       final notificaciones = await NotificacionesService.listar();
 
+      // Si esto falla, el inicio igual se muestra: solo se omite el aviso.
+      var porValorar = 0;
+      try {
+        final solicitudes = await MarketplaceService.listarSolicitudes();
+        porValorar = solicitudes
+            .where((s) => s.estado == EstadoSolicitudEnviada.finalizada && s.valoracion == null)
+            .length;
+      } catch (_) {}
+
       if (!mounted) return;
 
       setState(() {
         _actividades = actividades;
         _notificaciones = notificaciones;
+        _porValorar = porValorar;
         _cargando = false;
       });
     } on ApiException catch (e) {
@@ -73,6 +90,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _irA(Widget pantalla) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => pantalla));
+  }
+
+  Future<void> _irAValorar() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const SolicitudesFamiliarScreen()));
+    if (mounted) _cargar();
   }
 
   /// Actividades programadas para hoy, en orden de hora.
@@ -125,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final deHoy = _deHoy;
     final completadas = deHoy.where((a) => a.estado == EstadoTarea.realizada).length;
     final pendientes = deHoy.where((a) => a.estado == EstadoTarea.pendiente).length;
+    final noRealizadas = deHoy.where((a) => a.estado == EstadoTarea.noRealizada).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -135,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: const [MenuNavegacionButton()],
       ),
       // El chat vuelve cuando haya un servicio activo con un cuidador.
+      floatingActionButton: const ChatFab(),
       bottomNavigationBar: const FamiliarBottomNav(seleccionada: PestanaFamiliar.inicio),
       backgroundColor: const Color(0xFFFFF7F5),
       body: _cargando
@@ -162,6 +186,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
+                    if (_porValorar > 0) ...[
+                        _AvisoValorar(cantidad: _porValorar, onTap: _irAValorar),
+                        const SizedBox(height: 12),
+                      ],
+
                       if (adulto == null)
                         _TarjetaSinAdultos(onVincular: _vincular)
                       else ...[
@@ -179,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           onVerTareas: () => _irA(const TareasScreen()),
                         ),
                         const SizedBox(height: 12),
-                        _TarjetaResumenActividades(completadas: completadas, pendientes: pendientes, total: deHoy.length),
+                        _TarjetaResumenActividades(completadas: completadas, pendientes: pendientes, noRealizadas: noRealizadas, total: deHoy.length),
                         const SizedBox(height: 16),
                         _TarjetaActividadesHoy(
                           actividades: deHoy
@@ -188,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     titulo: a.titulo,
                                     hora: _hora(a.fechaHora),
                                     completada: a.estado == EstadoTarea.realizada,
+                                    noRealizada: a.estado == EstadoTarea.noRealizada,
                                   ))
                               .toList(),
                           onVerTodas: () => _irA(const TareasScreen()),
@@ -208,7 +238,8 @@ class _Actividad {
   final String titulo;
   final String hora;
   final bool completada;
-  const _Actividad({required this.titulo, required this.hora, required this.completada});
+  final bool noRealizada;
+  const _Actividad({required this.titulo, required this.hora, required this.completada, this.noRealizada = false});
 }
 
 enum _TipoAlerta { observacion, sos, tareaAtrasada }
@@ -264,59 +295,79 @@ class _TarjetaEstadoAdultoMayor extends StatelessWidget {
 class _TarjetaResumenActividades extends StatelessWidget {
   final int completadas;
   final int pendientes;
+  final int noRealizadas;
   final int total;
-  const _TarjetaResumenActividades({required this.completadas, required this.pendientes, required this.total});
-
+  const _TarjetaResumenActividades({
+    required this.completadas,
+    required this.pendientes,
+    required this.noRealizadas,
+    required this.total,
+  });
+ 
   @override
   Widget build(BuildContext context) {
     final progreso = total == 0 ? 0.0 : completadas / total;
     return _Tarjeta(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _CajaEstadistica(numero: completadas, etiqueta: 'Completadas', color: const Color(0xFFDFF3E3), colorTexto: Colors.green),
-              const SizedBox(width: 10),
-              _CajaEstadistica(numero: pendientes, etiqueta: 'Pendientes', color: const Color(0xFFFCE6E6), colorTexto: Colors.deepOrange),
-              const SizedBox(width: 10),
               _CajaEstadistica(numero: total, etiqueta: 'Total', color: const Color(0xFFEDE3F7), colorTexto: Colors.deepPurple),
+              const SizedBox(width: 8),
+              _CajaEstadistica(numero: completadas, etiqueta: 'Realizadas', color: const Color(0xFFDFF3E3), colorTexto: Colors.green),
+              const SizedBox(width: 8),
+              _CajaEstadistica(numero: pendientes, etiqueta: 'Pendientes', color: const Color(0xFFFFF0DC), colorTexto: Colors.deepOrange),
+              const SizedBox(width: 8),
+              _CajaEstadistica(numero: noRealizadas, etiqueta: 'No realizadas', color: const Color(0xFFFCE6E6), colorTexto: Colors.red),
             ],
           ),
           const SizedBox(height: 14),
+          Text(
+            total == 0 ? 'Sin actividades para hoy' : '$completadas de $total actividades realizadas',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(value: progreso, minHeight: 8, backgroundColor: Colors.grey[200], valueColor: const AlwaysStoppedAnimation(Colors.green)),
+            child: LinearProgressIndicator(
+              value: progreso,
+              minHeight: 8,
+              backgroundColor: Colors.grey[200],
+              valueColor: const AlwaysStoppedAnimation(Colors.green),
+            ),
           ),
         ],
       ),
     );
   }
 }
-
+ 
 class _CajaEstadistica extends StatelessWidget {
   final int numero;
   final String etiqueta;
   final Color color;
   final Color colorTexto;
   const _CajaEstadistica({required this.numero, required this.etiqueta, required this.color, required this.colorTexto});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 2),
         decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(12)),
         child: Column(
           children: [
             Text('$numero', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: colorTexto)),
             const SizedBox(height: 4),
-            Text(etiqueta, style: TextStyle(fontSize: 12, color: colorTexto)),
+            FittedBox(fit: BoxFit.scaleDown, child: Text(etiqueta, style: TextStyle(fontSize: 12, color: colorTexto))),
           ],
         ),
       ),
     );
   }
 }
+ 
 
 class _TarjetaActividadesHoy extends StatelessWidget {
   final List<_Actividad> actividades;
@@ -341,9 +392,17 @@ class _TarjetaActividadesHoy extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
                 children: [
-                  CircleAvatar(radius: 16, backgroundColor: a.completada ? Colors.green[50] : Colors.grey[200], child: Icon(a.completada ? Icons.check : Icons.schedule, size: 16, color: a.completada ? Colors.green : Colors.grey[600])),
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: a.completada ? Colors.green[50] : (a.noRealizada ? Colors.red[50] : Colors.grey[200]),
+                    child: Icon(
+                      a.completada ? Icons.check : (a.noRealizada ? Icons.close : Icons.schedule),
+                      size: 16,
+                      color: a.completada ? Colors.green : (a.noRealizada ? Colors.red : Colors.grey[600]),
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(a.titulo, style: TextStyle(decoration: a.completada ? TextDecoration.lineThrough : null, color: a.completada ? Colors.grey : Colors.black87))),
+                  Expanded(child: Text(a.titulo, style: TextStyle(decoration: a.completada ? TextDecoration.lineThrough : null, color: a.completada ? Colors.grey : (a.noRealizada ? Colors.red[700] : Colors.black87)))),
                   Text(a.hora, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
                 ],
               ),
@@ -410,6 +469,46 @@ class _TarjetaAlertasRecientes extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+/// Aviso en el inicio: hay servicios finalizados que todavía no se han valorado.
+class _AvisoValorar extends StatelessWidget {
+  final int cantidad;
+  final VoidCallback onTap;
+  const _AvisoValorar({required this.cantidad, required this.onTap});
+ 
+  @override
+  Widget build(BuildContext context) {
+    final texto = cantidad == 1 ? 'Tienes 1 servicio por valorar' : 'Tienes $cantidad servicios por valorar';
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3D6),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.amber.shade300),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.star_rounded, color: Colors.amber, size: 30),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(texto, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 2),
+                  const Text('Cuéntanos cómo fue la atención del cuidador', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.black45),
+          ],
+        ),
       ),
     );
   }

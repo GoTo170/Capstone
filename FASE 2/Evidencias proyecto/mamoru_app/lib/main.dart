@@ -14,6 +14,7 @@ Future<void> main() async {
 
   // Lee del teléfono la sesión guardada (si la hay).
   await Sesion.cargar();
+  
 
   runApp(const MamoruApp());
 }

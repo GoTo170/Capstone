@@ -46,3 +46,17 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Archivos privados y variables de entorno
+.env
+.env.*
+!.env.example
+
+# Credenciales privadas de Firebase
+serviceAccountKey.json
+mamoru-firebase-key.json
+
+# Claves privadas de Android
+key.properties
+*.jks
+*.keystore

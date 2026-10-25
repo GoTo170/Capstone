@@ -10,6 +10,7 @@ import '../../../core/api_exception.dart';
 import '../models/solicitud_servicio.dart';
 import '../services/cuidador_service.dart';
 import 'solicitudes_servicio_screen.dart';
+import '../../shared/chat/chat_fab.dart';
  
 class InicioCuidadorScreen extends StatefulWidget {
   final String nombreCuidador;
@@ -176,6 +177,7 @@ class _InicioCuidadorScreenState extends State<InicioCuidadorScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF7F5),
       // El chat vuelve cuando haya un servicio activo con una familia.
+      floatingActionButton: const ChatFab(),
       bottomNavigationBar: CuidadorBottomNav(
         seleccionada: PestanaCuidador.inicio,
         nombreCuidador: widget.nombreCuidador,

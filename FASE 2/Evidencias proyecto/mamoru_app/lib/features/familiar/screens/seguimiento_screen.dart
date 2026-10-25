@@ -1,31 +1,31 @@
 import 'package:flutter/material.dart';
-
+ 
 import '../state/familiar_contexto.dart';
 import '../models/actividad.dart';
-
+ 
 class SeguimientoScreen extends StatefulWidget {
   final List<Actividad> actividades;
-
+ 
   const SeguimientoScreen({super.key, required this.actividades});
-
+ 
   @override
   State<SeguimientoScreen> createState() => _SeguimientoScreenState();
 }
-
+ 
 class _SeguimientoScreenState extends State<SeguimientoScreen> {
   final Set<int> _expandidas = {};
-
+ 
   int get _realizadas =>
       widget.actividades.where((a) => a.estado == EstadoTarea.realizada).length;
-
+ 
   int get _pendientes =>
       widget.actividades.where((a) => a.estado == EstadoTarea.pendiente).length;
-
+ 
   int get _noRealizadas =>
       widget.actividades
           .where((a) => a.estado == EstadoTarea.noRealizada)
           .length;
-
+ 
   int get _conNotas => widget.actividades
       .where(
         (a) =>
@@ -33,7 +33,7 @@ class _SeguimientoScreenState extends State<SeguimientoScreen> {
             a.observacionCuidador!.isNotEmpty,
       )
       .length;
-      
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -111,14 +111,14 @@ class _SeguimientoScreenState extends State<SeguimientoScreen> {
     );
   }
 }
-
+ 
 class _Contador extends StatelessWidget {
   final int numero;
   final String etiqueta;
   final Color color;
-
+ 
   const _Contador({required this.numero, required this.etiqueta, required this.color});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Expanded(
@@ -135,19 +135,19 @@ class _Contador extends StatelessWidget {
     );
   }
 }
-
+ 
 class _TarjetaSeguimiento extends StatelessWidget {
   final Actividad actividad;
   final bool expandida;
   final VoidCallback onToggle;
-
+ 
   const _TarjetaSeguimiento({required this.actividad, required this.expandida, required this.onToggle});
-
+ 
   String _formatearHora(DateTime f) {
     String d(int n) => n.toString().padLeft(2, '0');
     return '${d(f.hour)}:${d(f.minute)}';
   }
-
+ 
   Color get _colorBorde {
     switch (actividad.estado) {
       case EstadoTarea.realizada:
@@ -158,12 +158,12 @@ class _TarjetaSeguimiento extends StatelessWidget {
         return Colors.orange.shade100;
     }
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final tieneObservacion = actividad.observacionCuidador != null && actividad.observacionCuidador!.isNotEmpty;
     final completada = actividad.estado == EstadoTarea.realizada;
-
+ 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -260,61 +260,103 @@ class _TarjetaSeguimiento extends StatelessWidget {
     );
   }
 }
-
+ 
 class _TextoEstadoRegistro extends StatelessWidget {
   final Actividad actividad;
-
+ 
   const _TextoEstadoRegistro({required this.actividad});
-
+ 
   String _formatearHora(DateTime f) {
     String d(int n) => n.toString().padLeft(2, '0');
     return '${d(f.hour)}:${d(f.minute)}';
   }
-
+ 
   @override
   Widget build(BuildContext context) {
+    final hora = actividad.horaRegistroEstado != null ? _formatearHora(actividad.horaRegistroEstado!) : null;
+    final rol = actividad.completadaPorRol;
+ 
+    // Quién la registró: el servidor lo guarda desde que se marca la actividad.
+    // Las actividades antiguas no tienen ese dato y se muestran sin nombrar a nadie.
+    final quien = rol == 'adulto_mayor'
+        ? 'El adulto mayor'
+        : rol == 'cuidador'
+            ? 'El cuidador'
+            : null;
+ 
+    late final Widget principal;
     switch (actividad.estado) {
       case EstadoTarea.realizada:
-        return Row(
+        final texto = quien != null
+            ? '$quien la realizó${hora != null ? ' a las $hora' : ''}'
+            : 'Realizada${hora != null ? ' a las $hora' : ''}';
+        principal = Row(
           children: [
             const Icon(Icons.check, size: 12, color: Colors.green),
             const SizedBox(width: 4),
-            Text(
-              'El cuidador la realizó a las ${actividad.horaRegistroEstado != null ? _formatearHora(actividad.horaRegistroEstado!) : '-'}',
-              style: const TextStyle(fontSize: 11, color: Colors.green),
-            ),
+            Flexible(child: Text(texto, style: const TextStyle(fontSize: 11, color: Colors.green))),
           ],
         );
+        break;
       case EstadoTarea.noRealizada:
-        return const Row(
+        final texto = rol == 'sistema'
+            ? 'Se marcó sola: pasó su hora sin registrarse'
+            : quien != null
+                ? '$quien indicó que no se realizó'
+                : 'No se realizó';
+        principal = Row(
           children: [
-            Icon(Icons.close, size: 12, color: Colors.red),
-            SizedBox(width: 4),
-            Text('El cuidador reportó que no se realizó', style: TextStyle(fontSize: 11, color: Colors.red)),
+            const Icon(Icons.close, size: 12, color: Colors.red),
+            const SizedBox(width: 4),
+            Flexible(child: Text(texto, style: const TextStyle(fontSize: 11, color: Colors.red))),
           ],
         );
+        break;
       case EstadoTarea.pendiente:
-        return const Row(
+        principal = const Row(
           children: [
             Icon(Icons.hourglass_empty, size: 12, color: Colors.orange),
             SizedBox(width: 4),
-            Text('Aún no registrada por el cuidador', style: TextStyle(fontSize: 11, color: Colors.orange)),
+            Text('Aún no registrada', style: TextStyle(fontSize: 11, color: Colors.orange)),
           ],
         );
+        break;
     }
+ 
+    if (actividad.horaOriginal == null) return principal;
+ 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        principal,
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            const Icon(Icons.fast_forward_rounded, size: 12, color: Colors.blueGrey),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                'Adelantada: estaba programada a las ${_formatearHora(actividad.horaOriginal!)}',
+                style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
-
+ 
 class _EtiquetaEstado extends StatelessWidget {
   final EstadoTarea estado;
-
+ 
   const _EtiquetaEstado({required this.estado});
-
+ 
   @override
   Widget build(BuildContext context) {
     late final String texto;
     late final Color color;
-
+ 
     switch (estado) {
       case EstadoTarea.pendiente:
         texto = 'Pendiente';
@@ -329,7 +371,7 @@ class _EtiquetaEstado extends StatelessWidget {
         color = Colors.red;
         break;
     }
-
+ 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),

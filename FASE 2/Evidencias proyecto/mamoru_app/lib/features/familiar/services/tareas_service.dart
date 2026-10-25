@@ -69,6 +69,20 @@ class TareasService {
     return _aActividad(datos);
   }
  
+  /// Pasa una actividad flexible a la hora actual (hasta 30 min antes de su hora).
+  static Future<Actividad> adelantar(String id) async {
+    final datos = await ApiClient.post('/tareas/$id/adelantar', {}) as Map<String, dynamic>;
+    return _aActividad(datos);
+  }
+ 
+  /// Para actividades de horario estricto: avisa a la familia que se necesita revisar la hora.
+  static Future<void> solicitarCambio(String id, {String? motivo}) async {
+    final texto = motivo?.trim() ?? '';
+    await ApiClient.post('/tareas/$id/solicitar-cambio', {
+      if (texto.isNotEmpty) 'motivo': texto,
+    });
+  }
+ 
   /// Observaciones que dejó el cuidador, por actividad. Si no se pueden traer,
   /// las actividades se muestran igual, solo que sin observaciones.
   static Future<Map<String, List<_ObservacionCuidador>>> _observacionesPorTarea() async {
@@ -123,6 +137,7 @@ class TareasService {
  
     final confirmacion = tarea['fecha_confirmacion'] as String?;
     final notas = tarea['descripcion'] as String?;
+    final horaOriginal = tarea['hora_original'] as String?;
  
     // Una observación se muestra con su hora; si hay dos, cada una lleva su hora
     // delante y se muestran juntas.
@@ -146,6 +161,9 @@ class TareasService {
       horaRegistroEstado: confirmacion == null ? null : DateTime.parse(confirmacion),
       observacionCuidador: textoObservacion,
       horaObservacion: horaObservacion,
+      completadaPorRol: tarea['completada_por_rol'] as String?,
+      horaOriginal: horaOriginal == null ? null : DateTime.parse(horaOriginal),
+      esFlexible: (tarea['es_flexible'] as bool?) ?? false,
     );
   }
  
