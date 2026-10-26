@@ -18,6 +18,7 @@ const enlaces: Enlace[] = [
   { to: '/marketplace', texto: 'Marketplace' },
   { to: '/solicitudes', texto: 'Solicitudes' },
   { to: '/alertas-sos', texto: 'Alertas SOS' },
+  { to: '/reportes', texto: 'Reportes' },
   { to: '/auditoria', texto: 'Auditoría' },
   { to: '/config', texto: 'Configuración' },
 ]

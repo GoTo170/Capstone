@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import RecuperarContrasena from './pages/RecuperarContrasena'
 import RestablecerContrasena from './pages/RestablecerContrasena'
 import Marketplace from './pages/Marketplace'
+import Reportes from './pages/Reportes'
 import Solicitudes from './pages/Solicitudes'
 import Usuarios from './pages/Usuarios'
 
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/marketplace" element={<Marketplace />} />
             <Route path="/solicitudes" element={<Solicitudes />} />
             <Route path="/alertas-sos" element={<AlertasSOS />} />
+            <Route path="/reportes" element={<Reportes />} />
             <Route path="/auditoria" element={<Auditoria />} />
             <Route path="/config" element={<Config />} />
           </Route>
