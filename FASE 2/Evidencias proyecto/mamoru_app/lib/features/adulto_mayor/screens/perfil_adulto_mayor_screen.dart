@@ -10,8 +10,9 @@ import '../widgets/adulto_mayor_bottom_nav.dart';
 class FamiliarVinculado {
   final String nombre;
   final DateTime fechaVinculacion;
+  final String? fotoUrl;
  
-  const FamiliarVinculado({required this.nombre, required this.fechaVinculacion});
+  const FamiliarVinculado({required this.nombre, required this.fechaVinculacion, this.fotoUrl});
 }
  
 class PerfilAdultoMayorScreen extends StatefulWidget {
@@ -52,7 +53,7 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
         _nombreCompleto = perfil.nombreCompleto;
         _fotoUrl = perfil.fotoUrl;
         _familiares = perfil.familiares
-            .map((f) => FamiliarVinculado(nombre: f.nombre, fechaVinculacion: f.fechaVinculacion))
+            .map((f) => FamiliarVinculado(nombre: f.nombre, fechaVinculacion: f.fechaVinculacion, fotoUrl: f.fotoUrl))
             .toList();
         _cargando = false;
       });
@@ -180,6 +181,7 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
                             for (final familiar in _familiares) ...[
                               _TarjetaFamiliarVinculado(
                                 nombre: familiar.nombre,
+                                fotoUrl: familiar.fotoUrl,
                                 fechaTexto: _formatearFecha(familiar.fechaVinculacion),
                               ),
                               if (familiar != _familiares.last) const SizedBox(height: 10),
@@ -215,8 +217,9 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
 class _TarjetaFamiliarVinculado extends StatelessWidget {
   final String nombre;
   final String fechaTexto;
+  final String? fotoUrl;
  
-  const _TarjetaFamiliarVinculado({required this.nombre, required this.fechaTexto});
+  const _TarjetaFamiliarVinculado({required this.nombre, required this.fechaTexto, this.fotoUrl});
  
   @override
   Widget build(BuildContext context) {
@@ -225,7 +228,12 @@ class _TarjetaFamiliarVinculado extends StatelessWidget {
       decoration: BoxDecoration(color: const Color(0xFFEAF7EE), borderRadius: BorderRadius.circular(14)),
       child: Row(
         children: [
-          const CircleAvatar(radius: 20, backgroundColor: Color(0xFFF6B9D0), child: Icon(Icons.people, color: Colors.white, size: 20)),
+          AvatarFoto(
+            radio: 20,
+            colorFondo: const Color(0xFFF6B9D0),
+            fotoUrl: fotoUrl,
+            sinFoto: const Icon(Icons.people, color: Colors.white, size: 20),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
