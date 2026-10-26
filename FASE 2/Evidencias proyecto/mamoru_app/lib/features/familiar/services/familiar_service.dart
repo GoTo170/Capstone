@@ -1,4 +1,10 @@
+import 'dart:convert';
+ 
+import 'package:http/http.dart' as http;
+ 
 import '../../../core/api_client.dart';
+import '../../../core/api_config.dart';
+import '../../../core/sesion.dart';
 import '../models/perfil_adulto_mayor_vinculado.dart';
  
 /// Resultado de crear o regenerar una invitación.
@@ -27,6 +33,15 @@ class AdultoVinculado {
     required this.accesoActivado,
     this.fotoUrl,
   });
+}
+ 
+/// Error al guardar los contactos de emergencia (mensaje listo para mostrar).
+class ErrorContactos implements Exception {
+  final String mensaje;
+  const ErrorContactos(this.mensaje);
+ 
+  @override
+  String toString() => mensaje;
 }
  
 /// Operaciones del familiar contra el backend.
@@ -128,6 +143,62 @@ class FamiliarService {
       intolerancias: _lista(d['intolerancia_alimentaria'] as String?),
       contactosEmergencia: contactos,
     );
+  }
+ 
+  /// Reemplaza los contactos de emergencia del adulto mayor (1 a 3).
+  /// Los cambios se guardan de inmediato, sin aprobación del administrador.
+  static Future<List<ContactoEmergenciaInfo>> actualizarContactos(
+    String adultoMayorId,
+    List<ContactoEmergenciaInfo> contactos,
+  ) async {
+    final http.Response respuesta;
+    try {
+      respuesta = await http
+          .put(
+            Uri.parse('${ApiConfig.baseUrl}/adultos-mayores/$adultoMayorId/contactos'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (Sesion.token != null) 'Authorization': 'Bearer ${Sesion.token}',
+            },
+            body: jsonEncode({
+              'contactos': [
+                for (int i = 0; i < contactos.length; i++)
+                  {
+                    'nombre': contactos[i].nombre,
+                    'telefono': contactos[i].telefono,
+                    'parentesco': contactos[i].relacion,
+                    'orden': i + 1,
+                  },
+              ],
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+    } catch (_) {
+      throw const ErrorContactos('No se pudo conectar con el servidor. Revisa tu conexión.');
+    }
+ 
+    dynamic cuerpo;
+    try {
+      cuerpo = jsonDecode(utf8.decode(respuesta.bodyBytes));
+    } catch (_) {
+      cuerpo = null;
+    }
+ 
+    if (respuesta.statusCode < 200 || respuesta.statusCode >= 300) {
+      final detalle = cuerpo is Map ? cuerpo['detail'] : null;
+      throw ErrorContactos(
+        detalle is String ? detalle : 'No se pudieron guardar los contactos (error ${respuesta.statusCode}).',
+      );
+    }
+ 
+    return (cuerpo as List<dynamic>).map((item) {
+      final c = item as Map<String, dynamic>;
+      return ContactoEmergenciaInfo(
+        nombre: c['nombre'] as String,
+        telefono: c['telefono'] as String,
+        relacion: (c['parentesco'] as String?) ?? '',
+      );
+    }).toList();
   }
  
   /// Genera un código nuevo para un adulto mayor que ya existe.

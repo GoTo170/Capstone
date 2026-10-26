@@ -4,6 +4,7 @@ import '../../../core/api_exception.dart';
 import '../../familiar/models/actividad.dart';
 import '../../familiar/services/tareas_service.dart';
 import '../services/adulto_mayor_service.dart';
+import '../services/sos_sms_service.dart';
 import '../widgets/adulto_mayor_bottom_nav.dart';
 import '../../familiar/screens/acciones_horario.dart';
 import 'tareas_adulto_mayor_screen.dart';
@@ -27,6 +28,7 @@ class _InicioAdultoMayorScreenState extends State<InicioAdultoMayorScreen> {
  
   Timer? _timer;
   bool _mostrandoAlertaEnviada = false;
+  String _detalleSms = '';
  
   @override
   void initState() {
@@ -35,6 +37,10 @@ class _InicioAdultoMayorScreenState extends State<InicioAdultoMayorScreen> {
     // (empezó la siguiente sin haberse registrado) para marcarla como no realizada.
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _refrescar());
     _cargar();
+    // Guarda en el teléfono los contactos de emergencia (para el SMS del SOS)
+    // y pide desde ya el permiso de enviar SMS, no en plena emergencia.
+    SosSmsService.actualizarContactos();
+    WidgetsBinding.instance.addPostFrameCallback((_) => SosSmsService.pedirPermiso());
   }
  
   @override
@@ -193,29 +199,67 @@ class _InicioAdultoMayorScreenState extends State<InicioAdultoMayorScreen> {
       ),
     );
  
-    if (confirmado == true) {
-      try {
-        await AdultoMayorService.enviarSOS();
+    if (confirmado != true) return;
  
-        if (!mounted) return;
- 
-        setState(() => _mostrandoAlertaEnviada = true);
-        Timer(const Duration(seconds: 3), () {
-          if (mounted) setState(() => _mostrandoAlertaEnviada = false);
-        });
-      } on ApiException catch (e) {
-        if (!mounted) return;
-        // Es importante que sepa que la alerta NO salió.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('No se pudo enviar la alerta. ${e.mensaje} Inténtalo de nuevo o llama a un familiar.'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 8),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    // 1) Aviso a la familia dentro de Mamoru (necesita internet).
+    String? errorServidor;
+    try {
+      await AdultoMayorService.enviarSOS();
+    } on ApiException catch (e) {
+      errorServidor = e.mensaje;
     }
+ 
+    // 2) SMS a los contactos de emergencia, desde el chip de este teléfono.
+    final sms = await SosSmsService.enviar(widget.nombre);
+ 
+    if (!mounted) return;
+ 
+    if (errorServidor != null && !sms.salioAlgo) {
+      // No salió nada: es importante que sepa que la alerta NO salió.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo enviar la alerta. $errorServidor Inténtalo de nuevo o llama a un familiar.'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+ 
+    setState(() {
+      _detalleSms = _textoSms(sms, servidorOk: errorServidor == null);
+      _mostrandoAlertaEnviada = true;
+    });
+    Timer(const Duration(seconds: 6), () {
+      if (mounted) setState(() => _mostrandoAlertaEnviada = false);
+    });
+  }
+ 
+  String _textoSms(ResultadoSms sms, {required bool servidorOk}) {
+    final partes = <String>[];
+    if (servidorOk) partes.add('Tu familia ha sido notificada en Mamoru.');
+    if (!servidorOk) partes.add('No pudimos avisar por internet.');
+    switch (sms.estado) {
+      case EstadoSms.enviado:
+        partes.add('También enviamos un SMS a tus contactos de emergencia.');
+        break;
+      case EstadoSms.parcial:
+        partes.add('Enviamos SMS a ${sms.enviados} de ${sms.total} contactos de emergencia.');
+        break;
+      case EstadoSms.sinPermiso:
+        partes.add('No se enviaron SMS porque falta el permiso para enviar mensajes.');
+        break;
+      case EstadoSms.sinContactos:
+        partes.add('No hay contactos de emergencia guardados para enviar SMS.');
+        break;
+      case EstadoSms.noDisponible:
+        break;
+      case EstadoSms.error:
+        partes.add('No se pudo enviar el SMS a tus contactos. Si puedes, llámalos.');
+        break;
+    }
+    return partes.join(' ');
   }
  
   String _formatearHora(DateTime f) {
@@ -288,12 +332,12 @@ class _InicioAdultoMayorScreenState extends State<InicioAdultoMayorScreen> {
                                 margin: const EdgeInsets.only(bottom: 16),
                                 decoration: BoxDecoration(color: const Color(0xFFFBE3E3), borderRadius: BorderRadius.circular(16)),
                                 child: Column(
-                                  children: const [
-                                    Icon(Icons.notifications_active, color: Colors.red, size: 28),
-                                    SizedBox(height: 6),
-                                    Text('Alerta enviada', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
-                                    SizedBox(height: 2),
-                                    Text('Tu familia ha sido notificada', style: TextStyle(fontSize: 13, color: Colors.black87)),
+                                  children: [
+                                    const Icon(Icons.notifications_active, color: Colors.red, size: 28),
+                                    const SizedBox(height: 6),
+                                    const Text('Alerta enviada', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
+                                    const SizedBox(height: 2),
+                                    Text(_detalleSms, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.black87)),
                                   ],
                                 ),
                               ),
