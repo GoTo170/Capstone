@@ -310,11 +310,23 @@ def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
     minutos = None if usuario.rol == "administrador" else MINUTOS_SESION_MOVIL
     token = crear_token_acceso({"sub": str(usuario.id), "rol": usuario.rol}, minutos=minutos)
     usuario_out = schemas.UsuarioOut.model_validate(usuario)
-
+ 
+    if usuario.rol == "administrador":
+        registrar_auditoria(db, usuario.id, "Inició sesión", "sesion", usuario.id, None)
+ 
     return schemas.Token(access_token=token, usuario=usuario_out)
+ 
+ 
+@app.post("/logout")
+def logout(
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    """El panel llama a esto al cerrar sesión, para que quede en la auditoría."""
+    registrar_auditoria(db, admin_actual.id, "Cerró sesión", "sesion", admin_actual.id, None)
+    return {"ok": True}
+ 
 
-
-@app.get("/perfil", response_model=schemas.UsuarioOut)
 @app.get("/perfil", response_model=schemas.UsuarioOut)
 def mi_perfil(usuario_actual: models.Usuario = Depends(obtener_usuario_actual)):
     return usuario_actual

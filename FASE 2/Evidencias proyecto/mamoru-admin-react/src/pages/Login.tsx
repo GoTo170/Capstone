@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { apiFetch, guardarSesion, obtenerToken, type LoginResponse } from '../lib/api'
 
 export default function Login() {
@@ -100,6 +100,9 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+            </div>
+            <div className="auth-olvido">
+              <Link to="/recuperar-contrasena">¿Olvidaste tu contraseña?</Link>
             </div>
             <button type="submit" className="auth-submit" disabled={cargando}>
               {cargando ? 'Ingresando…' : 'Iniciar sesión'}

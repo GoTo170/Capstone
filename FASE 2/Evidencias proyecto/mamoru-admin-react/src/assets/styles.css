@@ -1391,3 +1391,35 @@ body {
   margin-top: 6px;
   line-height: 1.5;
 }
+
+/* ---------- Recuperar contraseña ---------- */
+.auth-olvido {
+  text-align: right;
+  margin: -6px 0 14px;
+  font-size: 12.5px;
+}
+ 
+.auth-olvido a {
+  color: var(--morado-mamoru);
+  font-weight: 600;
+}
+ 
+.auth-olvido a:hover {
+  text-decoration: underline;
+}
+ 
+.auth-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--brand);
+  font-weight: 600;
+  font-size: inherit;
+}
+ 
+.auth-submit-link {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}
+ 

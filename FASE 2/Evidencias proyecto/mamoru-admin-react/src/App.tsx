@@ -7,6 +7,8 @@ import Config from './pages/Config'
 import Cuidadores from './pages/Cuidadores'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
+import RecuperarContrasena from './pages/RecuperarContrasena'
+import RestablecerContrasena from './pages/RestablecerContrasena'
 import Marketplace from './pages/Marketplace'
 import Solicitudes from './pages/Solicitudes'
 import Usuarios from './pages/Usuarios'
@@ -16,6 +18,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
+        <Route path="/restablecer-contrasena" element={<RestablecerContrasena />} />
 
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>

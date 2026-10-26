@@ -66,10 +66,15 @@ export default function Layout() {
 
   const contexto: ContextoLayout = { refrescarPendientes, refrescarSOS }
 
-  function salir() {
-    cerrarSesion()
-    navigate('/login')
-  }
+  async function salir() {
+     try {
+       await apiFetch('/logout', { method: 'POST' })
+     } catch {
+       // se ignora a propósito
+     }
+     cerrarSesion()
+     navigate('/login')
+   }
 
   function insignia(to: string): number {
     if (to === '/cuidadores') return pendientes
