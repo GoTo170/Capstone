@@ -5,6 +5,7 @@ import '../../familiar/models/actividad.dart';
 import '../../familiar/services/tareas_service.dart';
 import '../services/adulto_mayor_service.dart';
 import '../widgets/adulto_mayor_bottom_nav.dart';
+import '../../familiar/screens/acciones_horario.dart';
 import 'tareas_adulto_mayor_screen.dart';
  
 class InicioAdultoMayorScreen extends StatefulWidget {
@@ -390,6 +391,18 @@ class _InicioAdultoMayorScreenState extends State<InicioAdultoMayorScreen> {
                                               ],
                                             ),
                                           ),
+                                          if (actividad.id != null) ...[
+                                            const SizedBox(height: 10),
+                                            AccionesHorario(
+                                              id: actividad.id!,
+                                              titulo: actividad.titulo,
+                                              categoria: actividad.tipo.name,
+                                              horaProgramada: actividad.fechaHora,
+                                              pendiente: true,
+                                              // Al adelantar, la hora pasa a "ahora" y se habilitan los botones.
+                                              onAdelantada: () => _cargar(silencioso: true),
+                                            ),
+                                          ],
                                           const SizedBox(height: 12),
                                           SizedBox(
                                             width: double.infinity,

@@ -1,3 +1,5 @@
+import os
+import time as reloj
 import random
 import uuid
 import string
@@ -22,6 +24,11 @@ from almacenamiento import (
     estado_almacenamiento,
     subir_foto,
 )
+
+# Hora de Chile: en la nube el servidor trabaja en UTC.
+os.environ.setdefault("TZ", "America/Santiago")
+if hasattr(reloj, "tzset"):
+    reloj.tzset()
 
 Base.metadata.create_all(bind=engine, checkfirst=True)
  
