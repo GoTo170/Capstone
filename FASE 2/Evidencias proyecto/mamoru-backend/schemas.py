@@ -717,3 +717,7 @@ class ChatResumenOut(BaseModel):
 
 class PushToken(BaseModel):
     token: str
+
+
+class ContactosEmergenciaActualizar(BaseModel):
+    contactos: List[ContactoEmergenciaCreate]

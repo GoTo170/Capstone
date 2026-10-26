@@ -1948,6 +1948,17 @@ def crear_alerta_sos(
     return nueva
 
 
+@app.get("/adulto-mayor/mis-contactos", response_model=list[schemas.ContactoEmergenciaOut])
+def mis_contactos_emergencia(
+    db: Session = Depends(get_db),
+    adulto_mayor_actual: models.Usuario = Depends(requerir_rol("adulto_mayor")),
+):
+    """Contactos de emergencia del adulto mayor que inició sesión (para avisarles por SMS en un SOS)."""
+    return db.query(models.ContactoEmergencia).filter(
+        models.ContactoEmergencia.adulto_mayor_id == adulto_mayor_actual.id
+    ).order_by(models.ContactoEmergencia.orden).all()
+
+
 @app.get("/alertas-sos", response_model=list[schemas.AlertaSOSOut])
 def listar_alertas_sos(
     db: Session = Depends(get_db),
@@ -2634,3 +2645,55 @@ def quitar_foto_del_adulto_mayor(
         borrar_foto(url_anterior)
  
     return {"foto_url": None}
+
+
+@app.put("/adultos-mayores/{adulto_mayor_id}/contactos", response_model=list[schemas.ContactoEmergenciaOut])
+def actualizar_contactos_emergencia(
+    adulto_mayor_id: str,
+    datos: schemas.ContactosEmergenciaActualizar,
+    db: Session = Depends(get_db),
+    familiar_actual: models.Usuario = Depends(requerir_rol("familiar")),
+):
+    if not familiar_tiene_vinculacion(db, familiar_actual.id, adulto_mayor_id):
+        raise HTTPException(status_code=403, detail="No tienes una vinculación activa con ese adulto mayor")
+ 
+    if len(datos.contactos) < 1:
+        raise HTTPException(status_code=400, detail="Debes dejar al menos un contacto de emergencia")
+    if len(datos.contactos) > 3:
+        raise HTTPException(status_code=400, detail="Máximo 3 contactos de emergencia")
+ 
+    for c in datos.contactos:
+        nombre = c.nombre.strip()
+        telefono = c.telefono.strip()
+        if not nombre:
+            raise HTTPException(status_code=400, detail="Cada contacto debe tener un nombre")
+        if len(nombre) > 150:
+            raise HTTPException(status_code=400, detail="El nombre de un contacto es demasiado largo (máximo 150 caracteres)")
+        if len(telefono) > 20:
+            raise HTTPException(status_code=400, detail="El teléfono de un contacto es demasiado largo (máximo 20 caracteres)")
+        if sum(ch.isdigit() for ch in telefono) < 8:
+            raise HTTPException(status_code=400, detail="El teléfono de un contacto no es válido")
+        if c.parentesco and len(c.parentesco) > 50:
+            raise HTTPException(status_code=400, detail="La relación de un contacto es demasiado larga (máximo 50 caracteres)")
+ 
+    db.query(models.ContactoEmergencia).filter(
+        models.ContactoEmergencia.adulto_mayor_id == adulto_mayor_id
+    ).delete(synchronize_session=False)
+ 
+    nuevos = []
+    for i, c in enumerate(datos.contactos):
+        nuevo = models.ContactoEmergencia(
+            adulto_mayor_id=adulto_mayor_id,
+            nombre=c.nombre.strip(),
+            telefono=c.telefono.strip(),
+            parentesco=(c.parentesco or "").strip() or None,
+            orden=i + 1,
+        )
+        db.add(nuevo)
+        nuevos.append(nuevo)
+ 
+    db.commit()
+    for n in nuevos:
+        db.refresh(n)
+    return nuevos
+ 
