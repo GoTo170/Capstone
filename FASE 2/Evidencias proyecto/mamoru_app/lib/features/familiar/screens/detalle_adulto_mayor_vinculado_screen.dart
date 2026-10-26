@@ -1,41 +1,45 @@
 import 'package:flutter/material.dart';
 import '../../../core/api_exception.dart';
+import '../../../core/avatar_perfil.dart';
+import '../../../core/foto_perfil_service.dart';
 import '../models/perfil_adulto_mayor_vinculado.dart';
 import '../services/familiar_service.dart';
-
+ 
 class DetalleAdultoMayorVinculadoScreen extends StatefulWidget {
   final String adultoMayorId;
-
+ 
   const DetalleAdultoMayorVinculadoScreen({super.key, required this.adultoMayorId});
-
+ 
   @override
   State<DetalleAdultoMayorVinculadoScreen> createState() => _DetalleAdultoMayorVinculadoScreenState();
 }
-
+ 
 class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVinculadoScreen> {
   late PerfilAdultoMayorVinculado _perfil;
+  String? _fotoUrl;
   bool _cargando = true;
   String? _error;
-
+ 
   @override
   void initState() {
     super.initState();
     _cargar();
   }
-
+ 
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _error = null;
     });
-
+ 
     try {
-      final perfil = await FamiliarService.detalleAdultoMayor(widget.adultoMayorId);
-
+      final detalle = await FamiliarService.detalleConFoto(widget.adultoMayorId);
+ 
       if (!mounted) return;
-
+ 
       setState(() {
-        _perfil = perfil;
+        _perfil = detalle.perfil;
+        _fotoUrl = detalle.fotoUrl;
         _cargando = false;
       });
     } on ApiException catch (e) {
@@ -46,7 +50,7 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
       });
     }
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     if (_cargando || _error != null) {
@@ -70,7 +74,7 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
         ),
       );
     }
-
+ 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF7F5),
       body: SafeArea(
@@ -92,8 +96,22 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
                       padding: const EdgeInsets.only(top: 8),
                       child: Row(
                         children: [
-                          const CircleAvatar(radius: 24, backgroundColor: Color(0xFFF6D998), child: Icon(Icons.person, color: Colors.white)),
-                          const SizedBox(width: 10),
+                          AvatarFotoEditable(
+                            radio: 28,
+                            colorFondo: const Color(0xFFF6D998),
+                            colorCamara: Colors.deepPurple,
+                            sinFoto: const Icon(Icons.person, size: 30, color: Colors.white),
+                            fotoUrl: _fotoUrl,
+                            onElegida: (bytes) async {
+                              final url = await FotoPerfilService.subirAdultoMayor(widget.adultoMayorId, bytes);
+                              if (mounted) setState(() => _fotoUrl = url);
+                            },
+                            onQuitar: () async {
+                              await FotoPerfilService.quitarAdultoMayor(widget.adultoMayorId);
+                              if (mounted) setState(() => _fotoUrl = null);
+                            },
+                          ),
+                          const SizedBox(width: 14),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -258,17 +276,17 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
     );
   }
 }
-
+ 
 // ---------- Widgets compartidos de lectura ----------
-
+ 
 class _TarjetaBlanca extends StatelessWidget {
   final String titulo;
   final Widget child;
   final VoidCallback? onEditar;
   final bool pendienteAprobacion;
-
+ 
   const _TarjetaBlanca({required this.titulo, required this.child, this.onEditar, this.pendienteAprobacion = false});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -303,13 +321,13 @@ class _TarjetaBlanca extends StatelessWidget {
     );
   }
 }
-
+ 
 class _DatoSoloLectura extends StatelessWidget {
   final String etiqueta;
   final String valor;
-
+ 
   const _DatoSoloLectura({required this.etiqueta, required this.valor});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -322,13 +340,13 @@ class _DatoSoloLectura extends StatelessWidget {
     );
   }
 }
-
+ 
 class _Chip extends StatelessWidget {
   final String texto;
   final Color color;
-
+ 
   const _Chip({required this.texto, required this.color});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -338,13 +356,13 @@ class _Chip extends StatelessWidget {
     );
   }
 }
-
+ 
 class _BloqueAlergia extends StatelessWidget {
   final String titulo;
   final List<String> items;
-
+ 
   const _BloqueAlergia({required this.titulo, required this.items});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -359,9 +377,9 @@ class _BloqueAlergia extends StatelessWidget {
     );
   }
 }
-
+ 
 // ---------- Pantallas de edición ----------
-
+ 
 class _EditarListaScreen extends StatefulWidget {
   final String titulo;
   final List<String> items;
@@ -369,7 +387,7 @@ class _EditarListaScreen extends StatefulWidget {
   final int maxCaracteres;
   final int maxItems;
   final String ejemplo;
-
+ 
   const _EditarListaScreen({
     required this.titulo,
     required this.items,
@@ -378,40 +396,40 @@ class _EditarListaScreen extends StatefulWidget {
     required this.maxItems,
     required this.ejemplo,
   });
-
+ 
   @override
   State<_EditarListaScreen> createState() => _EditarListaScreenState();
 }
-
+ 
 class _EditarListaScreenState extends State<_EditarListaScreen> {
   late List<TextEditingController> _controladores = widget.items.isEmpty
       ? [TextEditingController()]
       : widget.items.map((i) => TextEditingController(text: i)).toList();
   bool _formularioFueEnviado = false;
-
+ 
   bool _itemValido(String texto) {
     final largo = texto.trim().length;
     return largo >= widget.minCaracteres && largo <= widget.maxCaracteres;
   }
-
+ 
   bool get _todoValido => _controladores.every((c) => _itemValido(c.text));
-
+ 
   void _agregar() {
     if (_controladores.length >= widget.maxItems) return;
     setState(() => _controladores.add(TextEditingController()));
   }
-
+ 
   void _eliminar(int index) {
     if (_controladores.length <= 1) return;
     setState(() => _controladores.removeAt(index));
   }
-
+ 
   void _guardar() {
     setState(() => _formularioFueEnviado = true);
     if (!_todoValido) return;
     Navigator.pop(context, _controladores.map((c) => c.text.trim()).toList());
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -463,39 +481,39 @@ class _EditarListaScreenState extends State<_EditarListaScreen> {
     );
   }
 }
-
+ 
 class _ResultadoAlergias {
   final List<String> medicamentos;
   final List<String> alimentos;
   final List<String> intolerancias;
-
+ 
   const _ResultadoAlergias({required this.medicamentos, required this.alimentos, required this.intolerancias});
 }
-
+ 
 class _EditarAlergiasScreen extends StatefulWidget {
   final List<String> medicamentos;
   final List<String> alimentos;
   final List<String> intolerancias;
-
+ 
   const _EditarAlergiasScreen({required this.medicamentos, required this.alimentos, required this.intolerancias});
-
+ 
   @override
   State<_EditarAlergiasScreen> createState() => _EditarAlergiasScreenState();
 }
-
+ 
 class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
   late List<TextEditingController> _medControllers = widget.medicamentos.map((e) => TextEditingController(text: e)).toList();
   late List<TextEditingController> _aliControllers = widget.alimentos.map((e) => TextEditingController(text: e)).toList();
   late List<TextEditingController> _intControllers = widget.intolerancias.map((e) => TextEditingController(text: e)).toList();
   bool _formularioFueEnviado = false;
-
+ 
   bool _valido(String t, int min, int max) => t.trim().length >= min && t.trim().length <= max;
-
+ 
   bool get _todoValido =>
       _medControllers.every((c) => _valido(c.text, 3, 45)) &&
       _aliControllers.every((c) => _valido(c.text, 3, 35)) &&
       _intControllers.every((c) => _valido(c.text, 3, 35));
-
+ 
   void _guardar() {
     setState(() => _formularioFueEnviado = true);
     if (!_todoValido) return;
@@ -508,7 +526,7 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
       ),
     );
   }
-
+ 
   Widget _bloque(String titulo, List<TextEditingController> controllers, int max, int min, int maxCar, String hint, VoidCallback onAgregar) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -541,7 +559,7 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
       ],
     );
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -574,30 +592,30 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
     );
   }
 }
-
+ 
 class _EditarContactosScreen extends StatefulWidget {
   final List<ContactoEmergenciaInfo> contactos;
-
+ 
   const _EditarContactosScreen({required this.contactos});
-
+ 
   @override
   State<_EditarContactosScreen> createState() => _EditarContactosScreenState();
 }
-
+ 
 class _EditarContactosScreenState extends State<_EditarContactosScreen> {
   static const _opcionesRelacion = ['Hijo/a', 'Nieto/a', 'Sobrino/a', 'Amigo/a', 'Vecino/a', 'Otro'];
   late List<_ContactoEditable> _contactos = widget.contactos.map((c) => _ContactoEditable.desde(c)).toList();
   bool _formularioFueEnviado = false;
-
+ 
   bool _contactoValido(_ContactoEditable c) => c.nombre.text.trim().isNotEmpty && c.telefono.text.trim().isNotEmpty && c.relacion != null;
   bool get _todoValido => _contactos.isNotEmpty && _contactos.every(_contactoValido);
-
+ 
   void _guardar() {
     setState(() => _formularioFueEnviado = true);
     if (!_todoValido) return;
     Navigator.pop(context, _contactos.map((c) => ContactoEmergenciaInfo(nombre: c.nombre.text.trim(), telefono: c.telefono.text.trim(), relacion: c.relacion!)).toList());
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -683,16 +701,16 @@ class _EditarContactosScreenState extends State<_EditarContactosScreen> {
     );
   }
 }
-
+ 
 class _ContactoEditable {
   final TextEditingController nombre;
   final TextEditingController telefono;
   String? relacion;
-
+ 
   _ContactoEditable({String nombreInicial = '', String telefonoInicial = '', this.relacion})
       : nombre = TextEditingController(text: nombreInicial),
         telefono = TextEditingController(text: telefonoInicial);
-
+ 
   factory _ContactoEditable.desde(ContactoEmergenciaInfo c) =>
       _ContactoEditable(nombreInicial: c.nombre, telefonoInicial: c.telefono, relacion: c.relacion);
 }

@@ -13,6 +13,7 @@ class UsuarioSesion {
   final String? email;
   final String rol;
   final String? telefono;
+  final String? fotoUrl;
  
   const UsuarioSesion({
     required this.id,
@@ -21,6 +22,7 @@ class UsuarioSesion {
     this.email,
     required this.rol,
     this.telefono,
+    this.fotoUrl,
   });
  
   factory UsuarioSesion.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class UsuarioSesion {
       email: json['email'] as String?,
       rol: json['rol'] as String,
       telefono: json['telefono'] as String?,
+      fotoUrl: json['foto_url'] as String?,
     );
   }
  
@@ -41,6 +44,7 @@ class UsuarioSesion {
         'email': email,
         'rol': rol,
         'telefono': telefono,
+        'foto_url': fotoUrl,
       };
  
   String get nombreCompleto {
@@ -97,6 +101,16 @@ class Sesion {
     await prefs.setString(_claveUsuario, jsonEncode(usuario.toJson()));
   }
  
+  /// Actualiza los datos del usuario (por ejemplo, tras cambiar la foto)
+  /// sin tocar el token.
+  static Future<void> actualizarUsuario(UsuarioSesion usuario) async {
+    _usuario = usuario;
+    if (_token == null) return;
+ 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_claveUsuario, jsonEncode(usuario.toJson()));
+  }
+ 
   /// Cierra la sesión. En memoria es inmediato; el borrado en el teléfono
   /// continúa en segundo plano.
   static void cerrar() {
@@ -118,3 +132,4 @@ class Sesion {
     await prefs.remove(_claveUsuario);
   }
 }
+ 

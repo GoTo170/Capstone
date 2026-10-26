@@ -2,52 +2,55 @@ import 'package:flutter/material.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/auth_service.dart';
 import '../../../core/api_exception.dart';
+import '../../../core/avatar_perfil.dart';
 import '../../../core/sesion.dart';
 import '../services/adulto_mayor_service.dart';
 import '../widgets/adulto_mayor_bottom_nav.dart';
-
+ 
 class FamiliarVinculado {
   final String nombre;
   final DateTime fechaVinculacion;
-
+ 
   const FamiliarVinculado({required this.nombre, required this.fechaVinculacion});
 }
-
+ 
 class PerfilAdultoMayorScreen extends StatefulWidget {
   const PerfilAdultoMayorScreen({super.key});
-
+ 
   @override
   State<PerfilAdultoMayorScreen> createState() => _PerfilAdultoMayorScreenState();
 }
-
+ 
 class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
   String _nombreCompleto = Sesion.usuario?.nombreCompleto ?? '';
+  String? _fotoUrl;
   List<FamiliarVinculado> _familiares = [];
   bool _cargando = true;
   String? _error;
-
+ 
   /// Primer nombre real de quien inició sesión (para la barra inferior).
   String get _nombreCorto => Sesion.usuario?.nombre ?? '';
-
+ 
   @override
   void initState() {
     super.initState();
     _cargar();
   }
-
+ 
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _error = null;
     });
-
+ 
     try {
       final perfil = await AdultoMayorService.miPerfil();
-
+ 
       if (!mounted) return;
-
+ 
       setState(() {
         _nombreCompleto = perfil.nombreCompleto;
+        _fotoUrl = perfil.fotoUrl;
         _familiares = perfil.familiares
             .map((f) => FamiliarVinculado(nombre: f.nombre, fechaVinculacion: f.fechaVinculacion))
             .toList();
@@ -61,12 +64,12 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
       });
     }
   }
-
+ 
   String _formatearFecha(DateTime f) {
     String d(int n) => n.toString().padLeft(2, '0');
     return '${f.year}-${d(f.month)}-${d(f.day)}';
   }
-
+ 
   Future<void> _confirmarCerrarSesion(BuildContext context) async {
     final confirmado = await showDialog<bool>(
       context: context,
@@ -84,7 +87,7 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
         ],
       ),
     );
-
+ 
     if (confirmado == true && context.mounted) {
       AuthService.cerrarSesion();
       Navigator.pushAndRemoveUntil(
@@ -94,7 +97,7 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
       );
     }
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,11 +124,12 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
-                      child: const Icon(Icons.person, size: 32, color: Color(0xFFF6B94D)),
+                    // La foto la pone y la cambia el familiar; aquí solo se muestra.
+                    AvatarFoto(
+                      radio: 30,
+                      colorFondo: Colors.white,
+                      fotoUrl: _fotoUrl,
+                      sinFoto: const Icon(Icons.person, size: 34, color: Color(0xFFF6B94D)),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -207,13 +211,13 @@ class _PerfilAdultoMayorScreenState extends State<PerfilAdultoMayorScreen> {
     );
   }
 }
-
+ 
 class _TarjetaFamiliarVinculado extends StatelessWidget {
   final String nombre;
   final String fechaTexto;
-
+ 
   const _TarjetaFamiliarVinculado({required this.nombre, required this.fechaTexto});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(

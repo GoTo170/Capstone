@@ -1,32 +1,39 @@
+import 'dart:typed_data';
+ 
 import 'package:flutter/material.dart';
 import '../models/categoria_salud.dart';
 import '../../../core/api_exception.dart';
+import '../../../core/avatar_perfil.dart';
+import '../../../core/foto_perfil_service.dart';
 import '../services/familiar_service.dart';
 import 'invitacion_generada_screen.dart';
-
+ 
 class VincularScreen extends StatefulWidget {
   const VincularScreen({super.key});
-
+ 
   @override
   State<VincularScreen> createState() => _VincularScreenState();
 }
-
+ 
 class ContactoEmergencia {
   final TextEditingController nombreController = TextEditingController();
   final TextEditingController telefonoController = TextEditingController();
   String? relacion;
   final TextEditingController relacionOtroController = TextEditingController();
 }
-
+ 
 class _VincularScreenState extends State<VincularScreen> {
   final _nombreAdultoController = TextEditingController();
   final _apellidoAdultoController = TextEditingController();
   String? _relacionFamiliar;
   final _relacionFamiliarOtroController = TextEditingController();
   DateTime? _fechaNacimiento;
-
+ 
+  /// Foto elegida (opcional). Se sube después de crear al adulto mayor.
+  Uint8List? _fotoAdulto;
+ 
   final List<ContactoEmergencia> _contactos = [ContactoEmergencia()];
-
+ 
   late final CategoriaSalud _enfermedades = CategoriaSalud(
     nombre: 'Enfermedades o condiciones',
     preguntaCorta: '¿Tiene alguna enfermedad o condición de salud?',
@@ -59,17 +66,17 @@ class _VincularScreenState extends State<VincularScreen> {
     maxCaracteres: 35,
     ejemplo: 'Ej: Lactosa',
   );
-
+ 
   List<CategoriaSalud> get _categoriasSalud => [_enfermedades, _alergiaMedicamentos, _alergiaAlimentos, _intolerancias];
-
+ 
   bool _formularioFueEnviado = false;
   bool _enviando = false;
-
+ 
   static const _opcionesRelacionFamiliar = ['Madre', 'Padre', 'Abuela', 'Abuelo', 'Tía', 'Tío', 'Cónyuge', 'Otro'];
   static const _opcionesRelacionContacto = ['Hijo/a', 'Nieto/a', 'Sobrino/a', 'Amigo/a', 'Vecino/a', 'Otro'];
-
+ 
   static const int _edadMinima = 60;
-
+ 
   int _calcularEdad(DateTime nacimiento) {
     final hoy = DateTime.now();
     var edad = hoy.year - nacimiento.year;
@@ -79,10 +86,10 @@ class _VincularScreenState extends State<VincularScreen> {
     }
     return edad;
   }
-
+ 
   bool get _fechaNacimientoValida =>
       _fechaNacimiento != null && _calcularEdad(_fechaNacimiento!) >= _edadMinima;
-
+ 
   String? get _errorFechaNacimiento {
     final fecha = _fechaNacimiento;
     if (fecha == null) {
@@ -93,13 +100,13 @@ class _VincularScreenState extends State<VincularScreen> {
     }
     return null;
   }
-
+ 
   String _textoFecha(DateTime fecha) {
     final dia = fecha.day.toString().padLeft(2, '0');
     final mes = fecha.month.toString().padLeft(2, '0');
     return '$dia/$mes/${fecha.year}';
   }
-
+ 
   Future<void> _elegirFechaNacimiento() async {
     final hoy = DateTime.now();
     final seleccionada = await showDatePicker(
@@ -113,7 +120,7 @@ class _VincularScreenState extends State<VincularScreen> {
       setState(() => _fechaNacimiento = seleccionada);
     }
   }
-
+ 
   /// Junta los ítems de una categoría de salud (uno por línea).
   /// Si respondió "No" (o no escribió nada), no se envía nada.
   String? _textoSalud(CategoriaSalud categoria) {
@@ -124,24 +131,24 @@ class _VincularScreenState extends State<VincularScreen> {
         .toList();
     return items.isEmpty ? null : items.join('\n');
   }
-
+ 
   bool get _datosAdultoValidos =>
       _nombreAdultoController.text.trim().isNotEmpty &&
       _apellidoAdultoController.text.trim().isNotEmpty &&
       _fechaNacimientoValida &&
       _relacionFamiliar != null &&
       (_relacionFamiliar != 'Otro' || _relacionFamiliarOtroController.text.trim().isNotEmpty);
-
+ 
   bool get _saludValida => _categoriasSalud.every((c) => c.respondida && c.itemValido);
-
+ 
   bool _contactoValido(ContactoEmergencia c) =>
       c.nombreController.text.trim().isNotEmpty &&
       c.telefonoController.text.trim().isNotEmpty &&
       c.relacion != null &&
       (c.relacion != 'Otro' || c.relacionOtroController.text.trim().isNotEmpty);
-
+ 
   bool get _contactosValidos => _contactos.every(_contactoValido);
-
+ 
   void _elegirRespuestaSalud(CategoriaSalud categoria, bool respuesta) {
     setState(() {
       categoria.tiene = respuesta;
@@ -153,35 +160,35 @@ class _VincularScreenState extends State<VincularScreen> {
       }
     });
   }
-
+ 
   void _agregarItemSalud(CategoriaSalud categoria) {
     if (categoria.itemsControllers.length >= categoria.maxItems) return;
     setState(() => categoria.itemsControllers.add(TextEditingController()));
   }
-
+ 
   void _eliminarItemSalud(CategoriaSalud categoria, int index) {
     if (categoria.itemsControllers.length <= 1) return;
     setState(() => categoria.itemsControllers.removeAt(index));
   }
-
+ 
   void _agregarContacto() {
     if (_contactos.length >= 3) return;
     setState(() => _contactos.add(ContactoEmergencia()));
   }
-
+ 
   void _eliminarContacto(int index) {
     if (_contactos.length <= 1) return;
     setState(() => _contactos.removeAt(index));
   }
-
+ 
   Future<void> _generarInvitacion() async {
     setState(() => _formularioFueEnviado = true);
-
+ 
     if (!_datosAdultoValidos || !_saludValida || !_contactosValidos) return;
     if (_enviando) return;
-
+ 
     setState(() => _enviando = true);
-
+ 
     try {
       final invitacion = await FamiliarService.crearAdultoMayor(
         nombre: _nombreAdultoController.text.trim(),
@@ -206,9 +213,25 @@ class _VincularScreenState extends State<VincularScreen> {
             },
         ],
       );
-
+ 
       if (!mounted) return;
-
+ 
+      // La foto es opcional: si falla, el adulto mayor ya quedó creado y se puede
+      // agregar después desde su perfil.
+      final foto = _fotoAdulto;
+      if (foto != null) {
+        final mensajero = ScaffoldMessenger.of(context);
+        try {
+          await FotoPerfilService.subirAdultoMayor(invitacion.adultoMayorId, foto);
+        } on FotoException catch (e) {
+          mensajero.showSnackBar(SnackBar(
+            content: Text('El adulto mayor se creó, pero la foto no se subió: ${e.mensaje}'),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+        if (!mounted) return;
+      }
+ 
       // pushReplacement: así, al volver atrás no se regresa al formulario
       // lleno (y no se crea el mismo adulto mayor dos veces por error).
       Navigator.pushReplacement(
@@ -233,7 +256,7 @@ class _VincularScreenState extends State<VincularScreen> {
       if (mounted) setState(() => _enviando = false);
     }
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -261,6 +284,25 @@ class _VincularScreenState extends State<VincularScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          Center(
+                            child: AvatarFotoEditable(
+                              radio: 38,
+                              colorFondo: Colors.pink[100]!,
+                              colorCamara: Colors.pink,
+                              sinFoto: Icon(Icons.person, size: 40, color: Colors.pink[300]),
+                              fotoLocal: _fotoAdulto,
+                              avisarExito: false,
+                              onElegida: (bytes) async => setState(() => _fotoAdulto = bytes),
+                              onQuitar: () async => setState(() => _fotoAdulto = null),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Foto del adulto mayor (opcional)',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 14),
                           Row(
                             children: [
                               Expanded(
@@ -426,9 +468,9 @@ class _VincularScreenState extends State<VincularScreen> {
     );
   }
 }
-
+ 
 // ---------- Sección de Información de salud ----------
-
+ 
 class _SeccionSalud extends StatelessWidget {
   final CategoriaSalud categoria;
   final bool formularioFueEnviado;
@@ -436,7 +478,7 @@ class _SeccionSalud extends StatelessWidget {
   final VoidCallback onAgregarItem;
   final ValueChanged<int> onEliminarItem;
   final VoidCallback onChanged;
-
+ 
   const _SeccionSalud({
     required this.categoria,
     required this.formularioFueEnviado,
@@ -445,11 +487,11 @@ class _SeccionSalud extends StatelessWidget {
     required this.onEliminarItem,
     required this.onChanged,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     final sinResponder = formularioFueEnviado && !categoria.respondida;
-
+ 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -517,15 +559,15 @@ class _SeccionSalud extends StatelessWidget {
     );
   }
 }
-
+ 
 class _BotonSiNo extends StatelessWidget {
   final String texto;
   final bool seleccionado;
   final Color color;
   final VoidCallback onTap;
-
+ 
   const _BotonSiNo({required this.texto, required this.seleccionado, required this.color, required this.onTap});
-
+ 
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -543,7 +585,7 @@ class _BotonSiNo extends StatelessWidget {
     );
   }
 }
-
+ 
 class _ItemSalud extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -552,7 +594,7 @@ class _ItemSalud extends StatelessWidget {
   final bool formularioFueEnviado;
   final VoidCallback onChanged;
   final VoidCallback? onEliminar;
-
+ 
   const _ItemSalud({
     required this.controller,
     required this.hint,
@@ -562,17 +604,17 @@ class _ItemSalud extends StatelessWidget {
     required this.onChanged,
     required this.onEliminar,
   });
-
+ 
   bool get _valido {
     final largo = controller.text.trim().length;
     return largo >= minCaracteres && largo <= maxCaracteres;
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final mostrarError = formularioFueEnviado && !_valido;
     final borderColor = mostrarError ? Colors.red : Colors.grey.shade300;
-
+ 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -600,16 +642,16 @@ class _ItemSalud extends StatelessWidget {
     );
   }
 }
-
+ 
 // ---------- Widgets ya existentes (sin cambios) ----------
-
+ 
 class _EncabezadoRosado extends StatelessWidget {
   final IconData icono;
   final String titulo;
   final String descripcion;
-
+ 
   const _EncabezadoRosado({required this.icono, required this.titulo, required this.descripcion});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -647,16 +689,16 @@ class _EncabezadoRosado extends StatelessWidget {
     );
   }
 }
-
+ 
 class _TarjetaSeccion extends StatelessWidget {
   final int numero;
   final String titulo;
   final String? subtitulo;
   final String? etiquetaExtra;
   final Widget child;
-
+ 
   const _TarjetaSeccion({required this.numero, required this.titulo, this.subtitulo, this.etiquetaExtra, required this.child});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -692,19 +734,19 @@ class _TarjetaSeccion extends StatelessWidget {
     );
   }
 }
-
+ 
 class _EtiquetaCampo extends StatelessWidget {
   final String texto;
   final bool conError;
-
+ 
   const _EtiquetaCampo({required this.texto, required this.conError});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Text(texto, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.4, color: conError ? Colors.red : Colors.grey[600]));
   }
 }
-
+ 
 class _CampoConEtiqueta extends StatelessWidget {
   final String etiqueta;
   final TextEditingController controller;
@@ -712,7 +754,7 @@ class _CampoConEtiqueta extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final String? hint;
   final TextInputType keyboardType;
-
+ 
   const _CampoConEtiqueta({
     required this.etiqueta,
     required this.controller,
@@ -721,7 +763,7 @@ class _CampoConEtiqueta extends StatelessWidget {
     this.hint,
     this.keyboardType = TextInputType.text,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     final borderColor = conError ? Colors.red : Colors.grey.shade300;
@@ -747,14 +789,14 @@ class _CampoConEtiqueta extends StatelessWidget {
     );
   }
 }
-
+ 
 class _GrupoChips extends StatelessWidget {
   final List<String> opciones;
   final String? seleccionado;
   final ValueChanged<String> onSeleccionar;
-
+ 
   const _GrupoChips({required this.opciones, required this.seleccionado, required this.onSeleccionar});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Wrap(
@@ -779,7 +821,7 @@ class _GrupoChips extends StatelessWidget {
     );
   }
 }
-
+ 
 class _TarjetaContacto extends StatelessWidget {
   final int numero;
   final ContactoEmergencia contacto;
@@ -787,7 +829,7 @@ class _TarjetaContacto extends StatelessWidget {
   final bool formularioFueEnviado;
   final VoidCallback onChanged;
   final VoidCallback? onEliminar;
-
+ 
   const _TarjetaContacto({
     required this.numero,
     required this.contacto,
@@ -796,7 +838,7 @@ class _TarjetaContacto extends StatelessWidget {
     required this.onChanged,
     required this.onEliminar,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(
