@@ -6,7 +6,6 @@ import '../../familiar/models/actividad.dart';
 import '../../familiar/services/tareas_service.dart';
 import '../../../core/sesion.dart';
 import '../widgets/adulto_mayor_bottom_nav.dart';
-import '../../familiar/screens/acciones_horario.dart';
  
 class TareasAdultoMayorScreen extends StatefulWidget {
   /// Ya no se usa: las tareas se piden al servidor.
@@ -107,7 +106,7 @@ class _TareasAdultoMayorScreenState extends State<TareasAdultoMayorScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'El estado no se puede modificar desde esta pantalla. Si una actividad lo permite, puedes adelantarla.',
+                        'El estado de las tareas se registra desde Inicio, en "Próxima actividad".',
                         style: TextStyle(fontSize: 12, color: Colors.deepPurple[700]),
                       ),
                     ),
@@ -135,7 +134,6 @@ class _TareasAdultoMayorScreenState extends State<TareasAdultoMayorScreen> {
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
                   itemBuilder: (context, index) => _TarjetaActividadInformativa(
                     actividad: actividadesOrdenadas[index],
-                    onCambio: () => _cargar(silencioso: true),
                   ),
                 ),
               ),
@@ -149,9 +147,8 @@ class _TareasAdultoMayorScreenState extends State<TareasAdultoMayorScreen> {
  
 class _TarjetaActividadInformativa extends StatelessWidget {
   final Actividad actividad;
-  final VoidCallback onCambio;
  
-  const _TarjetaActividadInformativa({required this.actividad, required this.onCambio});
+  const _TarjetaActividadInformativa({required this.actividad});
  
   String _formatearHora(DateTime f) {
     String d(int n) => n.toString().padLeft(2, '0');
@@ -215,17 +212,6 @@ class _TarjetaActividadInformativa extends StatelessWidget {
                 if (actividad.estado == EstadoTarea.realizada && actividad.horaRegistroEstado != null) ...[
                   const SizedBox(height: 6),
                   Text('Completada a las ${_formatearHora(actividad.horaRegistroEstado!)}', style: const TextStyle(fontSize: 11, color: Colors.green)),
-                ],
-                if (actividad.id != null && actividad.estado == EstadoTarea.pendiente) ...[
-                  const SizedBox(height: 6),
-                  AccionesHorario(
-                    id: actividad.id!,
-                    titulo: actividad.titulo,
-                    categoria: actividad.tipo.name,
-                    horaProgramada: actividad.fechaHora,
-                    pendiente: true,
-                    onAdelantada: onCambio,
-                  ),
                 ],
               ],
             ),
