@@ -1,9 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/auth_service.dart';
 import '../../../core/api_exception.dart';
+import '../../../core/avatar_perfil.dart';
 import '../../../core/sesion.dart';
 import '../services/familiar_service.dart';
 import 'invitacion_generada_screen.dart';
@@ -11,22 +10,23 @@ import 'detalle_adulto_mayor_vinculado_screen.dart';
 import 'vincular_screen.dart';
 import '../widgets/familiar_bottom_nav.dart';
 import '../widgets/menu_navegacion_button.dart';
-
+ 
 class AdultoMayorResumen {
   final String id;
   final String nombre;
   final bool activo;
-
-  const AdultoMayorResumen({required this.id, required this.nombre, required this.activo});
+  final String? fotoUrl;
+ 
+  const AdultoMayorResumen({required this.id, required this.nombre, required this.activo, this.fotoUrl});
 }
-
+ 
 class PerfilFamiliarScreen extends StatefulWidget {
   const PerfilFamiliarScreen({super.key});
-
+ 
   @override
   State<PerfilFamiliarScreen> createState() => _PerfilFamiliarScreenState();
 }
-
+ 
 class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
   // Datos reales de quien inició sesión.
   String get _nombre => Sesion.usuario?.nombre ?? '';
@@ -34,33 +34,31 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
   String get _correo => Sesion.usuario?.email ?? 'No registrado';
   String get _telefono => Sesion.usuario?.telefono ?? 'No registrado';
   static const int _maxAdultosMayores = 2;
-
-  File? _foto;
-
+ 
   List<AdultoMayorResumen> _adultosVinculados = [];
   bool _cargandoAdultos = true;
   String? _errorAdultos;
-
+ 
   @override
   void initState() {
     super.initState();
     _cargarAdultos();
   }
-
+ 
   Future<void> _cargarAdultos() async {
     setState(() {
       _cargandoAdultos = true;
       _errorAdultos = null;
     });
-
+ 
     try {
       final lista = await FamiliarService.listarAdultosMayores();
-
+ 
       if (!mounted) return;
-
+ 
       setState(() {
         _adultosVinculados = lista
-            .map((a) => AdultoMayorResumen(id: a.id, nombre: a.nombreCompleto, activo: a.accesoActivado))
+            .map((a) => AdultoMayorResumen(id: a.id, nombre: a.nombreCompleto, activo: a.accesoActivado, fotoUrl: a.fotoUrl))
             .toList();
         _cargandoAdultos = false;
       });
@@ -72,7 +70,7 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
       });
     }
   }
-
+ 
   /// Genera un código nuevo para un adulto mayor ya vinculado
   /// (por ejemplo, si cerró sesión o cambió de celular).
   Future<void> _reinvitar(AdultoMayorResumen adulto) async {
@@ -88,14 +86,14 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
         ],
       ),
     );
-
+ 
     if (confirmado != true || !mounted) return;
-
+ 
     try {
       final invitacion = await FamiliarService.reinvitar(adulto.id, adulto.nombre);
-
+ 
       if (!mounted) return;
-
+ 
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -106,7 +104,7 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
           ),
         ),
       );
-
+ 
       if (mounted) _cargarAdultos();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -115,13 +113,7 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
       );
     }
   }
-
-  Future<void> _cambiarFoto() async {
-    final picker = ImagePicker();
-    final imagen = await picker.pickImage(source: ImageSource.gallery);
-    if (imagen != null) setState(() => _foto = File(imagen.path));
-  }
-
+ 
   Future<void> _confirmarCerrarSesion() async {
     final confirmado = await showDialog<bool>(
       context: context,
@@ -139,12 +131,12 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (r) => false);
     }
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final iniciales = '${_nombre.isNotEmpty ? _nombre[0] : ''}${_apellido.isNotEmpty ? _apellido[0] : ''}'.toUpperCase();
     final alMaximo = _adultosVinculados.length >= _maxAdultosMayores;
-
+ 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF7F5),
       appBar: AppBar(
@@ -167,28 +159,11 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
                 ),
                 child: Column(
                   children: [
-                    Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 40,
-                          backgroundColor: Colors.pink[200],
-                          backgroundImage: _foto != null ? FileImage(_foto!) : null,
-                          child: _foto == null ? Text(iniciales, style: const TextStyle(fontSize: 26, color: Colors.white, fontWeight: FontWeight.bold)) : null,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: InkWell(
-                            onTap: _cambiarFoto,
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 4)]),
-                              child: const Icon(Icons.camera_alt, size: 16, color: Colors.pink),
-                            ),
-                          ),
-                        ),
-                      ],
+                    AvatarPerfilEditable(
+                      radio: 40,
+                      colorFondo: Colors.pink[200]!,
+                      colorCamara: Colors.pink,
+                      sinFoto: Text(iniciales, style: const TextStyle(fontSize: 26, color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(height: 12),
                     Text('$_nombre $_apellido', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
@@ -246,10 +221,11 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
                             for (final a in _adultosVinculados) ...[
                               _ItemAdultoVinculado(
                                 adulto: a,
+                                // Al volver del detalle se recarga la lista (por si cambió la foto).
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(builder: (_) => DetalleAdultoMayorVinculadoScreen(adultoMayorId: a.id)),
-                                ),
+                                ).then((_) => _cargarAdultos()),
                                 onReinvitar: () => _reinvitar(a),
                               ),
                               const SizedBox(height: 8),
@@ -316,14 +292,14 @@ class _PerfilFamiliarScreenState extends State<PerfilFamiliarScreen> {
     );
   }
 }
-
+ 
 class _TarjetaBlanca extends StatelessWidget {
   final String titulo;
   final String? etiquetaExtra;
   final Widget child;
-
+ 
   const _TarjetaBlanca({required this.titulo, this.etiquetaExtra, required this.child});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -346,13 +322,13 @@ class _TarjetaBlanca extends StatelessWidget {
     );
   }
 }
-
+ 
 class _DatoSoloLectura extends StatelessWidget {
   final String etiqueta;
   final String valor;
-
+ 
   const _DatoSoloLectura({required this.etiqueta, required this.valor});
-
+ 
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -365,14 +341,14 @@ class _DatoSoloLectura extends StatelessWidget {
     );
   }
 }
-
+ 
 class _ItemAdultoVinculado extends StatelessWidget {
   final AdultoMayorResumen adulto;
   final VoidCallback onTap;
   final VoidCallback onReinvitar;
-
+ 
   const _ItemAdultoVinculado({required this.adulto, required this.onTap, required this.onReinvitar});
-
+ 
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -383,7 +359,12 @@ class _ItemAdultoVinculado extends StatelessWidget {
         decoration: BoxDecoration(color: const Color(0xFFF1EEFB), borderRadius: BorderRadius.circular(12)),
         child: Row(
           children: [
-            const CircleAvatar(radius: 18, backgroundColor: Color(0xFFF6D998), child: Icon(Icons.person, color: Colors.white, size: 18)),
+            AvatarFoto(
+              radio: 18,
+              colorFondo: const Color(0xFFF6D998),
+              fotoUrl: adulto.fotoUrl,
+              sinFoto: const Icon(Icons.person, color: Colors.white, size: 18),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

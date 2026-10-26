@@ -14,10 +14,12 @@ class FamiliarDelAdulto {
 /// Perfil del adulto mayor que inició sesión.
 class MiPerfilAdultoMayor {
   final String nombreCompleto;
+  final String? fotoUrl;
   final List<FamiliarDelAdulto> familiares;
  
   const MiPerfilAdultoMayor({
     required this.nombreCompleto,
+    this.fotoUrl,
     required this.familiares,
   });
 }
@@ -44,7 +46,9 @@ class AdultoMayorService {
  
     return MiPerfilAdultoMayor(
       nombreCompleto: '${datos['nombre']} ${datos['apellido'] ?? ''}'.trim(),
+      fotoUrl: datos['foto_url'] as String?,
       familiares: familiares,
     );
   }
 }
+ 
