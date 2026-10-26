@@ -733,6 +733,7 @@ def mi_perfil_adulto_mayor(
                 nombre=familiar.nombre,
                 apellido=familiar.apellido,
                 fecha_vinculacion=v.fecha_vinculacion,
+                foto_url=familiar.foto_url,
             ))
 
     return schemas.MiPerfilAdultoMayorOut(
