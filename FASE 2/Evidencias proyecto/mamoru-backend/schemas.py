@@ -455,8 +455,8 @@ class MiPerfilAdultoMayorOut(BaseModel):
     nombre: str
     apellido: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
+    foto_url: Optional[str] = None
     familiares: List[FamiliarVinculadoOut]
-
 
 
 
@@ -468,6 +468,7 @@ class AdultoMayorResumenOut(BaseModel):
     parentesco: Optional[str] = None
     fecha_vinculacion: datetime
     acceso_activado: bool
+    foto_url: Optional[str] = None
 
 
 

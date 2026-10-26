@@ -649,6 +649,7 @@ def listar_adultos_mayores(
             parentesco=v.parentesco,
             fecha_vinculacion=v.fecha_vinculacion,
             acceso_activado=acceso_activado(db, usuario.id),
+            foto_url=usuario.foto_url,
         ))
     return resultado
 
@@ -683,6 +684,7 @@ def detalle_adulto_mayor(
         parentesco=vinculacion.parentesco,
         fecha_vinculacion=vinculacion.fecha_vinculacion,
         acceso_activado=acceso_activado(db, usuario.id),
+        foto_url=usuario.foto_url,
         telefono=usuario.telefono,
         enfermedades=perfil.enfermedades if perfil else None,
         alergia_medicamentos=perfil.alergia_medicamentos if perfil else None,
@@ -737,6 +739,7 @@ def mi_perfil_adulto_mayor(
         nombre=adulto_actual.nombre,
         apellido=adulto_actual.apellido,
         fecha_nacimiento=perfil.fecha_nacimiento if perfil else None,
+        foto_url=adulto_actual.foto_url,
         familiares=familiares,
     )
 
@@ -2573,3 +2576,60 @@ def quitar_dispositivo_push(
     ).delete()
     db.commit()
     return {"ok": True}
+
+def _adulto_del_familiar(db, familiar_id, adulto_mayor_id):
+    if not familiar_tiene_vinculacion(db, familiar_id, adulto_mayor_id):
+        raise HTTPException(status_code=403, detail="No tienes una vinculación activa con ese adulto mayor")
+    adulto = db.query(models.Usuario).filter(models.Usuario.id == adulto_mayor_id).first()
+    if not adulto:
+        raise HTTPException(status_code=404, detail="Adulto mayor no encontrado")
+    return adulto
+ 
+ 
+@app.put("/adultos-mayores/{adulto_mayor_id}/foto")
+def subir_foto_del_adulto_mayor(
+    adulto_mayor_id: str,
+    datos: schemas.FotoPerfilSubir,
+    db: Session = Depends(get_db),
+    familiar_actual: models.Usuario = Depends(requerir_rol("familiar")),
+):
+    adulto = _adulto_del_familiar(db, familiar_actual.id, adulto_mayor_id)
+ 
+    try:
+        contenido = decodificar_imagen_base64(datos.imagen_base64)
+        extension, tipo_contenido = detectar_imagen(contenido)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+ 
+    try:
+        url_nueva = subir_foto(str(adulto.id), contenido, tipo_contenido, extension)
+    except ErrorAlmacenamiento as e:
+        print(f"[almacenamiento] {e.mensaje} | {e.detalle}")
+        raise HTTPException(status_code=502, detail=e.mensaje)
+ 
+    url_anterior = adulto.foto_url
+    adulto.foto_url = url_nueva
+    db.commit()
+ 
+    if url_anterior:
+        borrar_foto(url_anterior)
+ 
+    return {"foto_url": url_nueva}
+ 
+ 
+@app.delete("/adultos-mayores/{adulto_mayor_id}/foto")
+def quitar_foto_del_adulto_mayor(
+    adulto_mayor_id: str,
+    db: Session = Depends(get_db),
+    familiar_actual: models.Usuario = Depends(requerir_rol("familiar")),
+):
+    adulto = _adulto_del_familiar(db, familiar_actual.id, adulto_mayor_id)
+ 
+    url_anterior = adulto.foto_url
+    adulto.foto_url = None
+    db.commit()
+ 
+    if url_anterior:
+        borrar_foto(url_anterior)
+ 
+    return {"foto_url": None}
