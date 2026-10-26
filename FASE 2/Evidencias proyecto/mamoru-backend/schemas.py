@@ -447,6 +447,7 @@ class FamiliarVinculadoOut(BaseModel):
     nombre: str
     apellido: Optional[str] = None
     fecha_vinculacion: datetime
+    foto_url: Optional[str] = None
 
 
 
