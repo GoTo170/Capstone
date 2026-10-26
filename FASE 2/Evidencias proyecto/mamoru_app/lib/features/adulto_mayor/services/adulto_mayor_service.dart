@@ -4,10 +4,12 @@ import '../../../core/api_client.dart';
 class FamiliarDelAdulto {
   final String nombre;
   final DateTime fechaVinculacion;
+  final String? fotoUrl;
  
   const FamiliarDelAdulto({
     required this.nombre,
     required this.fechaVinculacion,
+    this.fotoUrl,
   });
 }
  
@@ -41,6 +43,7 @@ class AdultoMayorService {
       return FamiliarDelAdulto(
         nombre: '${f['nombre']} ${f['apellido'] ?? ''}'.trim(),
         fechaVinculacion: DateTime.parse(f['fecha_vinculacion'] as String),
+        fotoUrl: f['foto_url'] as String?,
       );
     }).toList();
  
