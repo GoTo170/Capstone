@@ -233,17 +233,22 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
                     const SizedBox(height: 16),
                     _TarjetaBlanca(
                       titulo: 'Contactos de emergencia',
-                      pendienteAprobacion: _perfil.contactosPendienteAprobacion,
+                      // Los contactos se guardan directamente (sin aprobación del administrador).
                       onEditar: () async {
                         final resultado = await Navigator.push<List<ContactoEmergenciaInfo>>(
                           context,
-                          MaterialPageRoute(builder: (_) => _EditarContactosScreen(contactos: _perfil.contactosEmergencia)),
+                          MaterialPageRoute(
+                            builder: (_) => _EditarContactosScreen(
+                              adultoMayorId: widget.adultoMayorId,
+                              contactos: _perfil.contactosEmergencia,
+                            ),
+                          ),
                         );
-                        if (resultado != null) {
-                          setState(() {
-                            _perfil.contactosEmergencia = resultado;
-                            _perfil.contactosPendienteAprobacion = true;
-                          });
+                        if (resultado != null && mounted) {
+                          setState(() => _perfil.contactosEmergencia = resultado);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Contactos de emergencia actualizados'), behavior: SnackBarBehavior.floating),
+                          );
                         }
                       },
                       child: Column(
@@ -594,9 +599,10 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
 }
  
 class _EditarContactosScreen extends StatefulWidget {
+  final String adultoMayorId;
   final List<ContactoEmergenciaInfo> contactos;
  
-  const _EditarContactosScreen({required this.contactos});
+  const _EditarContactosScreen({required this.adultoMayorId, required this.contactos});
  
   @override
   State<_EditarContactosScreen> createState() => _EditarContactosScreenState();
@@ -606,14 +612,31 @@ class _EditarContactosScreenState extends State<_EditarContactosScreen> {
   static const _opcionesRelacion = ['Hijo/a', 'Nieto/a', 'Sobrino/a', 'Amigo/a', 'Vecino/a', 'Otro'];
   late List<_ContactoEditable> _contactos = widget.contactos.map((c) => _ContactoEditable.desde(c)).toList();
   bool _formularioFueEnviado = false;
+  bool _guardando = false;
  
-  bool _contactoValido(_ContactoEditable c) => c.nombre.text.trim().isNotEmpty && c.telefono.text.trim().isNotEmpty && c.relacion != null;
+  bool _telefonoValido(String t) => t.replaceAll(RegExp(r'[^0-9]'), '').length >= 8 && t.trim().length <= 20;
+ 
+  bool _contactoValido(_ContactoEditable c) => c.nombre.text.trim().isNotEmpty && _telefonoValido(c.telefono.text) && c.relacion != null;
   bool get _todoValido => _contactos.isNotEmpty && _contactos.every(_contactoValido);
  
-  void _guardar() {
+  Future<void> _guardar() async {
     setState(() => _formularioFueEnviado = true);
-    if (!_todoValido) return;
-    Navigator.pop(context, _contactos.map((c) => ContactoEmergenciaInfo(nombre: c.nombre.text.trim(), telefono: c.telefono.text.trim(), relacion: c.relacion!)).toList());
+    if (!_todoValido || _guardando) return;
+ 
+    setState(() => _guardando = true);
+    try {
+      final guardados = await FamiliarService.actualizarContactos(
+        widget.adultoMayorId,
+        _contactos.map((c) => ContactoEmergenciaInfo(nombre: c.nombre.text.trim(), telefono: c.telefono.text.trim(), relacion: c.relacion!)).toList(),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, guardados);
+    } on ErrorContactos catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.mensaje), behavior: SnackBarBehavior.floating));
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
   }
  
   @override
@@ -658,8 +681,8 @@ class _EditarContactosScreenState extends State<_EditarContactosScreen> {
                             keyboardType: TextInputType.phone,
                             onChanged: (_) => setState(() {}),
                             decoration: InputDecoration(
-                              labelText: 'Teléfono',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _formularioFueEnviado && _contactos[i].telefono.text.trim().isEmpty ? Colors.red : Colors.grey.shade300)),
+                              labelText: 'Teléfono (ej: +56912345678)',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _formularioFueEnviado && !_telefonoValido(_contactos[i].telefono.text) ? Colors.red : Colors.grey.shade300)),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -691,9 +714,11 @@ class _EditarContactosScreenState extends State<_EditarContactosScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: _guardar,
+              onPressed: _guardando ? null : _guardar,
               style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-              child: const Text('Enviar cambios para aprobación'),
+              child: _guardando
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Guardar cambios'),
             ),
           ],
         ),
