@@ -1467,10 +1467,34 @@ body {
 }
  
 @media print {
+  /* Al imprimir se usa siempre el tema claro, aunque el panel esté en oscuro */
+  :root,
+  :root[data-theme="dark"] {
+    --bg: #FFFFFF;
+    --surface: #FFFFFF;
+    --surface-alt: #E7EEE9;
+    --surface-sunken: #EAF0EC;
+    --ink: #172623;
+    --ink-soft: #55655F;
+    --ink-faint: #8B9993;
+    --amber: #B8791F;
+    --amber-tint: #F6E6CB;
+    --coral: #B84B3B;
+    --coral-tint: #F5DAD5;
+    --sage: #3E7A5C;
+    --sage-tint: #DCEEE1;
+    --border: #DAE3DD;
+    --shadow: none;
+    --brand-tint: #E3F6EE;
+    --lila-tint: #F1ECFA;
+    --amarillo-tint: #FFF7F5;
+    --sos-tint: #FBEAE8;
+  }
+
   .app-header, .no-imprimir, .page-desc { display: none !important; }
   .solo-imprimir { display: block; }
-  .rep-cabecera-impresion { margin-bottom: 14px; font-size: 13px; }
-  body { background: #fff; }
+  .rep-cabecera-impresion { margin-bottom: 14px; font-size: 13px; color: var(--ink); }
+  html, body { background: #fff !important; }
   .content { max-width: none; padding: 0; }
   .panel, .kpi-card { box-shadow: none; break-inside: avoid; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

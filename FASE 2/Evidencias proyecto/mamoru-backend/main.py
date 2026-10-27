@@ -2223,6 +2223,134 @@ def listar_auditoria(
     return db.query(models.Auditoria).order_by(models.Auditoria.fecha.desc()).all()
 
 
+# ============================================================
+# Reportes del panel administrativo
+# ============================================================
+
+ROLES_REPORTE = ("familiar", "cuidador", "adulto_mayor")
+ESTADOS_SERVICIO = ("pendiente", "aceptada", "rechazada", "finalizada")
+
+
+def _mes(fecha) -> str:
+    return fecha.strftime("%Y-%m")
+
+
+@app.get("/admin/reportes")
+def reportes_panel(
+    desde: date | None = None,
+    hasta: date | None = None,
+    rol: str | None = None,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    """
+    Reporte por período (fecha de registro de usuarios y fecha de solicitud de servicios).
+    `rol` filtra la parte de usuarios (familiar, cuidador o adulto_mayor).
+    """
+    if rol is not None and rol not in ROLES_REPORTE:
+        raise HTTPException(status_code=400, detail="Tipo de usuario no válido")
+    if desde and hasta and desde > hasta:
+        raise HTTPException(status_code=400, detail="La fecha 'desde' no puede ser posterior a 'hasta'")
+
+    def en_periodo(fecha) -> bool:
+        if fecha is None:
+            return False
+        dia = fecha.date() if hasattr(fecha, "date") else fecha
+        if desde and dia < desde:
+            return False
+        if hasta and dia > hasta:
+            return False
+        return True
+
+    # ---------- Usuarios nuevos ----------
+    por_rol = {r: 0 for r in ROLES_REPORTE}
+    activos = 0
+    inactivos = 0
+    usuarios_mes: dict[str, dict[str, int]] = {}
+
+    for u in db.query(models.Usuario).filter(models.Usuario.rol.in_(ROLES_REPORTE)).all():
+        if rol and u.rol != rol:
+            continue
+        if not en_periodo(u.fecha_creacion):
+            continue
+        por_rol[u.rol] += 1
+        if u.activo:
+            activos += 1
+        else:
+            inactivos += 1
+        fila = usuarios_mes.setdefault(_mes(u.fecha_creacion), {r: 0 for r in ROLES_REPORTE})
+        fila[u.rol] += 1
+
+    # ---------- Servicios (solicitudes) ----------
+    por_estado = {e: 0 for e in ESTADOS_SERVICIO}
+    por_tipo: dict[str, dict[str, int]] = {}
+    servicios_mes: dict[str, dict[str, int]] = {}
+
+    for s in db.query(models.SolicitudServicio).all():
+        if not en_periodo(s.fecha_solicitud):
+            continue
+        estado = s.estado if s.estado in por_estado else "pendiente"
+        por_estado[estado] += 1
+
+        tipo = s.tipo_servicio or "sin_tipo"
+        t = por_tipo.setdefault(tipo, {"total": 0, "contratados": 0, "finalizados": 0, "rechazados": 0})
+        t["total"] += 1
+        if estado in ("aceptada", "finalizada"):
+            t["contratados"] += 1
+        if estado == "finalizada":
+            t["finalizados"] += 1
+        if estado == "rechazada":
+            t["rechazados"] += 1
+
+        m = servicios_mes.setdefault(_mes(s.fecha_solicitud), {"solicitados": 0, "contratados": 0, "finalizados": 0, "rechazados": 0})
+        m["solicitados"] += 1
+        if estado in ("aceptada", "finalizada"):
+            m["contratados"] += 1
+        if estado == "finalizada":
+            m["finalizados"] += 1
+        if estado == "rechazada":
+            m["rechazados"] += 1
+
+    total_servicios = sum(por_estado.values())
+    contratados = por_estado["aceptada"] + por_estado["finalizada"]
+    resueltos = contratados + por_estado["rechazada"]
+
+    # ---------- Cuidadores por estado de validación ----------
+    validacion = {"pendiente": 0, "aprobado": 0, "rechazado": 0}
+    for c in db.query(models.PerfilCuidador).all():
+        if not en_periodo(c.fecha_creacion):
+            continue
+        clave = c.estado_validacion if c.estado_validacion in validacion else "pendiente"
+        validacion[clave] += 1
+
+    return {
+        "periodo": {"desde": desde, "hasta": hasta},
+        "usuarios": {
+            "total": sum(por_rol.values()),
+            "por_rol": por_rol,
+            "activos": activos,
+            "inactivos": inactivos,
+            "por_mes": [{"mes": m, **usuarios_mes[m]} for m in sorted(usuarios_mes)],
+        },
+        "servicios": {
+            "total": total_servicios,
+            "por_estado": por_estado,
+            "contratados": contratados,
+            "finalizados": por_estado["finalizada"],
+            "rechazados": por_estado["rechazada"],
+            # Solo sobre servicios ya contratados: cuántos terminaron.
+            "tasa_finalizacion": round(por_estado["finalizada"] * 100 / contratados, 1) if contratados else None,
+            # Sobre las solicitudes ya resueltas (aceptadas, finalizadas o rechazadas).
+            "tasa_aceptacion": round(contratados * 100 / resueltos, 1) if resueltos else None,
+            "por_tipo": [
+                {"tipo": k, **v} for k, v in sorted(por_tipo.items(), key=lambda kv: -kv[1]["total"])
+            ],
+            "por_mes": [{"mes": m, **servicios_mes[m]} for m in sorted(servicios_mes)],
+        },
+        "cuidadores": {"por_validacion": validacion},
+    }
+
+
 ESTADOS_SOS_FINALES = ("atendida", "cancelada")
 
 
@@ -2710,129 +2838,4 @@ def actualizar_contactos_emergencia(
     return nuevos
 
 
-# ============================================================
-# Reportes del panel administrativo
-# ============================================================
-
-ROLES_REPORTE = ("familiar", "cuidador", "adulto_mayor")
-ESTADOS_SERVICIO = ("pendiente", "aceptada", "rechazada", "finalizada")
-
-
-def _mes(fecha) -> str:
-    return fecha.strftime("%Y-%m")
-
-
-@app.get("/admin/reportes")
-def reportes_panel(
-    desde: date | None = None,
-    hasta: date | None = None,
-    rol: str | None = None,
-    db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
-):
-    """
-    Reporte por período (fecha de registro de usuarios y fecha de solicitud de servicios).
-    `rol` filtra la parte de usuarios (familiar, cuidador o adulto_mayor).
-    """
-    if rol is not None and rol not in ROLES_REPORTE:
-        raise HTTPException(status_code=400, detail="Tipo de usuario no válido")
-    if desde and hasta and desde > hasta:
-        raise HTTPException(status_code=400, detail="La fecha 'desde' no puede ser posterior a 'hasta'")
-
-    def en_periodo(fecha) -> bool:
-        if fecha is None:
-            return False
-        dia = fecha.date() if hasattr(fecha, "date") else fecha
-        if desde and dia < desde:
-            return False
-        if hasta and dia > hasta:
-            return False
-        return True
-
-    # ---------- Usuarios nuevos ----------
-    por_rol = {r: 0 for r in ROLES_REPORTE}
-    activos = 0
-    inactivos = 0
-    usuarios_mes: dict[str, dict[str, int]] = {}
-
-    for u in db.query(models.Usuario).filter(models.Usuario.rol.in_(ROLES_REPORTE)).all():
-        if rol and u.rol != rol:
-            continue
-        if not en_periodo(u.fecha_creacion):
-            continue
-        por_rol[u.rol] += 1
-        if u.activo:
-            activos += 1
-        else:
-            inactivos += 1
-        fila = usuarios_mes.setdefault(_mes(u.fecha_creacion), {r: 0 for r in ROLES_REPORTE})
-        fila[u.rol] += 1
-
-    # ---------- Servicios (solicitudes) ----------
-    por_estado = {e: 0 for e in ESTADOS_SERVICIO}
-    por_tipo: dict[str, dict[str, int]] = {}
-    servicios_mes: dict[str, dict[str, int]] = {}
-
-    for s in db.query(models.SolicitudServicio).all():
-        if not en_periodo(s.fecha_solicitud):
-            continue
-        estado = s.estado if s.estado in por_estado else "pendiente"
-        por_estado[estado] += 1
-
-        tipo = s.tipo_servicio or "sin_tipo"
-        t = por_tipo.setdefault(tipo, {"total": 0, "contratados": 0, "finalizados": 0, "rechazados": 0})
-        t["total"] += 1
-        if estado in ("aceptada", "finalizada"):
-            t["contratados"] += 1
-        if estado == "finalizada":
-            t["finalizados"] += 1
-        if estado == "rechazada":
-            t["rechazados"] += 1
-
-        m = servicios_mes.setdefault(_mes(s.fecha_solicitud), {"solicitados": 0, "contratados": 0, "finalizados": 0, "rechazados": 0})
-        m["solicitados"] += 1
-        if estado in ("aceptada", "finalizada"):
-            m["contratados"] += 1
-        if estado == "finalizada":
-            m["finalizados"] += 1
-        if estado == "rechazada":
-            m["rechazados"] += 1
-
-    total_servicios = sum(por_estado.values())
-    contratados = por_estado["aceptada"] + por_estado["finalizada"]
-    resueltos = contratados + por_estado["rechazada"]
-
-    # ---------- Cuidadores por estado de validación ----------
-    validacion = {"pendiente": 0, "aprobado": 0, "rechazado": 0}
-    for c in db.query(models.PerfilCuidador).all():
-        if not en_periodo(c.fecha_creacion):
-            continue
-        clave = c.estado_validacion if c.estado_validacion in validacion else "pendiente"
-        validacion[clave] += 1
-
-    return {
-        "periodo": {"desde": desde, "hasta": hasta},
-        "usuarios": {
-            "total": sum(por_rol.values()),
-            "por_rol": por_rol,
-            "activos": activos,
-            "inactivos": inactivos,
-            "por_mes": [{"mes": m, **usuarios_mes[m]} for m in sorted(usuarios_mes)],
-        },
-        "servicios": {
-            "total": total_servicios,
-            "por_estado": por_estado,
-            "contratados": contratados,
-            "finalizados": por_estado["finalizada"],
-            "rechazados": por_estado["rechazada"],
-            # Solo sobre servicios ya contratados: cuántos terminaron.
-            "tasa_finalizacion": round(por_estado["finalizada"] * 100 / contratados, 1) if contratados else None,
-            # Sobre las solicitudes ya resueltas (aceptadas, finalizadas o rechazadas).
-            "tasa_aceptacion": round(contratados * 100 / resueltos, 1) if resueltos else None,
-            "por_tipo": [
-                {"tipo": k, **v} for k, v in sorted(por_tipo.items(), key=lambda kv: -kv[1]["total"])
-            ],
-            "por_mes": [{"mes": m, **servicios_mes[m]} for m in sorted(servicios_mes)],
-        },
-        "cuidadores": {"por_validacion": validacion},
-    }
+ 
