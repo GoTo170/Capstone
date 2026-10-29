@@ -1190,30 +1190,34 @@ TIPOS_SERVICIO = (
 MAX_HORAS_SERVICIO = 16
  
  
-def validar_solicitud(datos, ahora, servicios_del_cuidador=()):
-   """Reglas de una solicitud de servicio, antes de guardarla.
+def validar_solicitud(datos, ahora, servicios_del_cuidador=(), ofrece_puertas_adentro=False):
+    """Reglas de una solicitud de servicio, antes de guardarla.
  
-   El tipo de servicio es uno de los que el cuidador marcó en su perfil
-   (se guarda con el mismo nombre) o una de las claves antiguas."""
-   if datos.tipo_servicio not in TIPOS_SERVICIO and datos.tipo_servicio not in servicios_del_cuidador:
-       raise HTTPException(status_code=400, detail="Ese servicio no lo ofrece el cuidador")
-   if not datos.direccion or not datos.direccion.strip():
-       raise HTTPException(status_code=400, detail="La dirección es obligatoria")
-   if not (datos.fecha_inicio and datos.hora_inicio and datos.fecha_termino and datos.hora_termino):
-       raise HTTPException(status_code=400, detail="Indica la fecha y hora de inicio y de término")
+    El tipo de servicio es uno de los que el cuidador marcó en su perfil (se guarda
+    con el mismo nombre), una de las claves antiguas, o "cuidado_puertas_adentro"
+    si el cuidador tiene activada esa modalidad."""
+    if datos.tipo_servicio == "cuidado_puertas_adentro":
+        if not ofrece_puertas_adentro:
+            raise HTTPException(status_code=400, detail="Ese cuidador no ofrece la modalidad puertas adentro")
+    elif datos.tipo_servicio not in TIPOS_SERVICIO and datos.tipo_servicio not in servicios_del_cuidador:
+        raise HTTPException(status_code=400, detail="Ese servicio no lo ofrece el cuidador")
+    if not datos.direccion or not datos.direccion.strip():
+        raise HTTPException(status_code=400, detail="La dirección es obligatoria")
+    if not (datos.fecha_inicio and datos.hora_inicio and datos.fecha_termino and datos.hora_termino):
+        raise HTTPException(status_code=400, detail="Indica la fecha y hora de inicio y de término")
  
-   inicio = datetime.combine(datos.fecha_inicio, datos.hora_inicio)
-   termino = datetime.combine(datos.fecha_termino, datos.hora_termino)
+    inicio = datetime.combine(datos.fecha_inicio, datos.hora_inicio)
+    termino = datetime.combine(datos.fecha_termino, datos.hora_termino)
  
-   if termino <= inicio:
-       raise HTTPException(status_code=400, detail="La hora de término debe ser posterior a la de inicio")
-   if inicio < ahora - timedelta(minutes=5):
-       raise HTTPException(status_code=400, detail="La fecha y hora de inicio ya pasaron")
-   if (termino - inicio) > timedelta(hours=MAX_HORAS_SERVICIO) and datos.tipo_servicio != "cuidado_puertas_adentro":
-       raise HTTPException(
-           status_code=400,
-           detail=f"Un servicio de más de {MAX_HORAS_SERVICIO} horas debe ser de tipo puertas adentro",
-       )
+    if termino <= inicio:
+        raise HTTPException(status_code=400, detail="La hora de término debe ser posterior a la de inicio")
+    if inicio < ahora - timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="La fecha y hora de inicio ya pasaron")
+    if (termino - inicio) > timedelta(hours=MAX_HORAS_SERVICIO) and datos.tipo_servicio != "cuidado_puertas_adentro":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Un servicio de más de {MAX_HORAS_SERVICIO} horas debe ser de tipo puertas adentro",
+        )
 
  
 @app.post("/solicitudes", response_model=schemas.SolicitudServicioOut)
@@ -1228,9 +1232,9 @@ def crear_solicitud(
    perfil = db.query(models.PerfilCuidador).filter(models.PerfilCuidador.id == datos.cuidador_id).first()
    if not perfil or perfil.estado_validacion != "aprobado":
        raise HTTPException(status_code=404, detail="Ese cuidador no está disponible")
- 
+   
    servicios_del_cuidador = [l for l in lineas_de(perfil.servicios_ofrecidos) if l != MARCA_PUERTAS_ADENTRO]
-   validar_solicitud(datos, datetime.now(), servicios_del_cuidador)
+   validar_solicitud(datos, datetime.now(), servicios_del_cuidador, tiene_puertas_adentro(perfil))
  
    nueva = models.SolicitudServicio(
        solicitante_id=familiar_actual.id,
