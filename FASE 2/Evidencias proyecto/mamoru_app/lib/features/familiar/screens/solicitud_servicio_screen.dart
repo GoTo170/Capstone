@@ -106,6 +106,11 @@ class _SolicitudServicioScreenState
   bool get _tipoValido =>
       _tipoServicio != null;
  
+  /// Clave de la modalidad de cuidado por día (la misma que usa el servidor).
+  static const String _clavePuertasAdentro = 'cuidado_puertas_adentro';
+ 
+  bool get _esPuertasAdentro => _tipoServicio == _clavePuertasAdentro;
+ 
   bool get _formularioValido =>
       _direccionValida &&
       _fechaInicioValida &&
@@ -266,7 +271,32 @@ class _SolicitudServicioScreenState
   // TOTAL COTIZACIÓN
   // =========================================================
  
+  /// Días que se cobran en puertas adentro: uno por cada 24 horas (o fracción)
+  /// entre el inicio y el término, con un mínimo de 1.
+  int? get _diasPuertasAdentro {
+    final minutos = _duracionMinutos;
+ 
+    if (minutos == null) {
+      return null;
+    }
+ 
+    return (minutos / (24 * 60)).ceil();
+  }
+ 
+  int? get _tarifaDiaria => _tarifaProfesion?.puertasAdentro;
+ 
   double? get _totalCotizacion {
+    if (_esPuertasAdentro) {
+      final dias = _diasPuertasAdentro;
+      final diaria = _tarifaDiaria;
+ 
+      if (dias == null || diaria == null) {
+        return null;
+      }
+ 
+      return (dias * diaria).toDouble();
+    }
+ 
     final horas = _horasServicio;
     final tarifaHora = _tarifaHoraAplicada;
  
@@ -279,6 +309,12 @@ class _SolicitudServicioScreenState
   }
  
   bool get _cotizacionValida {
+    if (_esPuertasAdentro) {
+      return widget.cuidador.ofrecePuertasAdentro &&
+          _diasPuertasAdentro != null &&
+          _tarifaDiaria != null;
+    }
+ 
     final horas = _horasServicio;
  
     return horas != null &&
@@ -422,14 +458,18 @@ class _SolicitudServicioScreenState
     });
  
     if (!_formularioValido) {
-      if (_duracionMinutos != null &&
+      if (!_esPuertasAdentro &&
+          _duracionMinutos != null &&
           _horasServicio != null &&
           _horasServicio! > 16) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'La solicitud supera las 16 horas. '
-              'Revisa la modalidad puerta adentro.',
+              widget.cuidador.ofrecePuertasAdentro
+                  ? 'La solicitud supera las 16 horas. '
+                      'Elige "Cuidado puertas adentro" como tipo de servicio.'
+                  : 'La solicitud supera las 16 horas y este cuidador '
+                      'no ofrece la modalidad puertas adentro.',
             ),
             behavior: SnackBarBehavior.floating,
           ),
@@ -657,6 +697,129 @@ class _SolicitudServicioScreenState
     }
  
     // -------------------------------------------------------
+    // Puertas adentro: se cotiza por día.
+    // -------------------------------------------------------
+ 
+    if (_esPuertasAdentro) {
+      final dias = _diasPuertasAdentro;
+      final diaria = tarifa.puertasAdentro;
+ 
+      if (dias == null || diaria == null || total == null) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: const Text(
+            'No hay una tarifa diaria registrada para este cuidador.',
+            style: TextStyle(fontSize: 12),
+          ),
+        );
+      }
+ 
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0FBF6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFA9DFC9)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.receipt_long_outlined,
+                  color: Color(0xFF3FAE85),
+                  size: 22,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Cotización del servicio',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF2E7D62),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _filaCotizacion('Profesión', widget.cuidador.profesion),
+            const SizedBox(height: 8),
+            _filaCotizacion('Modalidad', 'Cuidado puertas adentro'),
+            const SizedBox(height: 8),
+            _filaCotizacion('Duración', _duracionFormateada),
+            const SizedBox(height: 8),
+            _filaCotizacion('Días a cobrar', dias == 1 ? '1 día' : '$dias días'),
+            const SizedBox(height: 8),
+            _filaCotizacion('Valor por día', '${_formatearCLP(diaria)} / día'),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1),
+            ),
+            Text(
+              '${dias == 1 ? '1 día' : '$dias días'} × ${_formatearCLP(diaria)} por día',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Expanded(
+                  child: Text(
+                    'TOTAL ESTIMADO',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2E7D62),
+                    ),
+                  ),
+                ),
+                Text(
+                  _formatearCLP(total),
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D62),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                  SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      'En la modalidad puertas adentro se cobra un valor fijo por día: '
+                      'cada 24 horas (o fracción) entre el inicio y el término cuenta como un día.',
+                      style: TextStyle(fontSize: 10, height: 1.4, color: Colors.black54),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+ 
+    // -------------------------------------------------------
     // Más de 16 horas.
     // -------------------------------------------------------
  
@@ -710,11 +873,11 @@ class _SolicitudServicioScreenState
  
             const SizedBox(height: 8),
  
-            if (tarifa.puertasAdentro != null)
+            if (widget.cuidador.ofrecePuertasAdentro && tarifa.puertasAdentro != null)
               Text(
-                'Este cuidador dispone de modalidad '
-                'puerta adentro por '
-                '${_formatearCLP(tarifa.puertasAdentro!)} al día.',
+                'Este cuidador dispone de la modalidad puertas adentro por '
+                '${_formatearCLP(tarifa.puertasAdentro!)} al día. '
+                'Elígela en "Tipo de servicio".',
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight:
@@ -723,7 +886,7 @@ class _SolicitudServicioScreenState
               )
             else
               const Text(
-                'Esta profesión no dispone de modalidad puerta adentro.',
+                'Este cuidador no ofrece la modalidad puertas adentro.',
                 style: TextStyle(
                   fontSize: 12,
                 ),
@@ -959,6 +1122,22 @@ class _SolicitudServicioScreenState
           ),
         ),
       ],
+    );
+  }
+ 
+  // =========================================================
+  // OPCIÓN DEL DESPLEGABLE DE SERVICIOS
+  // =========================================================
+ 
+  DropdownMenuItem<String> _opcionServicio(String valor, String texto) {
+    return DropdownMenuItem<String>(
+      value: valor,
+      child: Text(
+        texto,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 13),
+      ),
     );
   }
  
@@ -1231,19 +1410,17 @@ class _SolicitudServicioScreenState
                 isExpanded: true,
                 // Solo los servicios que el cuidador marcó en su perfil,
                 // con el mismo nombre que ahí tienen.
-                items: widget.cuidador.servicios.toSet().map(
-                  (nombre) {
-                    return DropdownMenuItem<String>(
-                      value: nombre,
-                      child: Text(
-                        nombre,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    );
-                  },
-                ).toList(),
+                items: [
+                  ...widget.cuidador.servicios
+                      .toSet()
+                      .map((nombre) => _opcionServicio(nombre, nombre)),
+                  // Solo si el cuidador tiene activada la modalidad en su perfil.
+                  if (widget.cuidador.ofrecePuertasAdentro)
+                    _opcionServicio(
+                      _clavePuertasAdentro,
+                      'Cuidado puertas adentro (cotización por día)',
+                    ),
+                ],
                 onChanged: (valor) {
                   setState(() {
                     _tipoServicio = valor;
