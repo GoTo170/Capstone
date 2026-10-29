@@ -109,7 +109,7 @@ class SolicitudServicio(Base):
     hora_inicio = Column(Time)
     fecha_termino = Column(Date)
     hora_termino = Column(Time)
-    tipo_servicio = Column(String(50))
+    tipo_servicio = Column(String(100))
     informacion_adicional = Column(Text)
     mensaje = Column(Text)
     motivo_rechazo = Column(String(50))
