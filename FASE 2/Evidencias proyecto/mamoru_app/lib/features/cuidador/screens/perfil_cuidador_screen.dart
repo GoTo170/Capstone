@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../auth/models/profesion_cuidador.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/auth_service.dart';
+import '../../auth/services/documento_cuidador_service.dart';
 import '../../../core/api_exception.dart';
 import '../models/perfil_cuidador.dart';
 import '../../shared/services/notificaciones_service.dart';
@@ -12,48 +14,56 @@ import '../../shared/widgets/avatar_foto.dart';
 import '../services/cuidador_service.dart';
 import '../../../core/sesion.dart';
 import '../widgets/cuidador_bottom_nav.dart';
- 
+
 class PerfilCuidadorScreen extends StatefulWidget {
   const PerfilCuidadorScreen({super.key});
- 
+
   @override
   State<PerfilCuidadorScreen> createState() => _PerfilCuidadorScreenState();
 }
- 
+
 class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
   late PerfilCuidadorData _perfil;
   bool _cargando = true;
   String? _error;
   bool _guardando = false;
- 
+
   @override
   void initState() {
     super.initState();
     _cargar();
   }
- 
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _error = null;
     });
- 
+
     try {
       final perfil = await CuidadorService.miPerfil();
       final valoraciones = await CuidadorService.listarValoraciones();
- 
+
       NotificacionApp? aviso;
       try {
         aviso = await CuidadorService.ultimoAvisoPuertasAdentro();
       } on ApiException {
         // Sin el aviso, el perfil se puede ver igual.
       }
- 
+
+      bool? tieneDocumento;
+      try {
+        tieneDocumento = await DocumentoCuidadorService.tieneDocumento();
+      } on ApiException {
+        // Sin este dato, el perfil se puede ver igual.
+      }
+
       if (!mounted) return;
- 
+
       setState(() {
         _perfil = perfil;
         _valoraciones = valoraciones;
+        _tieneDocumento = tieneDocumento;
         _avisoPuertasAdentro = aviso;
         _cargando = false;
       });
@@ -65,28 +75,30 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       });
     }
   }
- 
+
   File? _foto;
   bool _subiendoFoto = false;
   bool _cambiandoPuertasAdentro = false;
+  bool? _tieneDocumento;
+  bool _subiendoDocumento = false;
   NotificacionApp? _avisoPuertasAdentro;
- 
+
   // Tope que acepta el servidor para la foto.
   static const int _maxBytesFoto = 600 * 1024;
- 
+
   List<Valoracion> _valoraciones = [];
   bool _editando = false;
   bool _verTodasValoraciones = false;
   String? _idValoracionSolicitandoRevision;
   late PerfilCuidadorData _borrador;
- 
+
   ProfesionCuidador? get _infoProfesion => buscarProfesionPorId(_perfil.profesionId);
   bool get _esMedica => esProfesionMedica(_perfil.profesionId);
   List<String> get _catalogoServicios => _infoProfesion == null ? [] : serviciosPorCategoria(_infoProfesion!.categoria);
- 
+
   double get _promedio =>
       _valoraciones.isEmpty ? 0 : _valoraciones.map((v) => v.estrellas).reduce((a, b) => a + b) / _valoraciones.length;
- 
+
   /// Lo que todavía falta para que el perfil se muestre a las familias.
   List<String> get _faltantesPerfil => [
         if ((_perfil.fotoUrl ?? '').isEmpty) 'foto de perfil',
@@ -94,26 +106,26 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
         if (_perfil.especialidadesSeleccionadas.isEmpty) 'al menos una especialidad',
         if (_perfil.telefono.trim().isEmpty) 'teléfono',
       ];
- 
+
   bool get _perfilCompleto => _faltantesPerfil.isEmpty;
- 
+
   String get _textoEstadoPuertasAdentro {
     if (_perfil.puertasAdentroPendienteAprobacion) return 'Solicitud pendiente de aprobación';
     if (_perfil.puertasAdentroActivo) return 'Activa';
     return 'Requiere aprobación del administrador';
   }
- 
+
   void _entrarModoEdicion() {
     setState(() {
       _borrador = _perfil.copia();
       _editando = true;
     });
   }
- 
+
   void _cancelarEdicion() {
     setState(() => _editando = false);
   }
- 
+
   Future<ImageSource?> _elegirOrigenFoto() {
     return showModalBottomSheet<ImageSource>(
       context: context,
@@ -136,16 +148,16 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       ),
     );
   }
- 
+
   /// La foto se guarda al instante (no depende de "Guardar cambios").
   Future<void> _cambiarFoto() async {
     if (_subiendoFoto) return;
- 
+
     final origen = await _elegirOrigenFoto();
     if (origen == null || !mounted) return;
- 
+
     final mensajero = ScaffoldMessenger.of(context);
- 
+
     XFile? imagen;
     try {
       // El propio selector reduce la imagen: así pesa unos pocos cientos de KB.
@@ -165,7 +177,7 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       return;
     }
     if (imagen == null) return;
- 
+
     final bytes = await imagen.readAsBytes();
     if (bytes.length > _maxBytesFoto) {
       mensajero.showSnackBar(
@@ -176,18 +188,18 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       );
       return;
     }
- 
+
     if (!mounted) return;
     setState(() {
       _foto = File(imagen!.path); // se ve al instante, mientras sube
       _subiendoFoto = true;
     });
- 
+
     try {
       final actualizado = await CuidadorService.subirFoto(bytes);
- 
+
       if (!mounted) return;
- 
+
       setState(() => _perfil = actualizado);
       mensajero.showSnackBar(const SnackBar(content: Text('Foto de perfil actualizada.')));
     } on ApiException catch (e) {
@@ -200,18 +212,18 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       if (mounted) setState(() => _subiendoFoto = false);
     }
   }
- 
+
   Future<void> _quitarFoto() async {
     if (_subiendoFoto) return;
- 
+
     final mensajero = ScaffoldMessenger.of(context);
     setState(() => _subiendoFoto = true);
- 
+
     try {
       final actualizado = await CuidadorService.quitarFoto();
- 
+
       if (!mounted) return;
- 
+
       setState(() {
         _perfil = actualizado;
         _foto = null;
@@ -226,16 +238,16 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       if (mounted) setState(() => _subiendoFoto = false);
     }
   }
- 
+
   /// Pedir la modalidad puertas adentro (queda pendiente), cancelar la
   /// solicitud o dejar de ofrecerla. Se aplica al momento.
   Future<void> _alternarPuertasAdentro(bool quiere) async {
     final pendiente = _perfil.puertasAdentroPendienteAprobacion;
- 
+
     final String titulo;
     final String mensaje;
     final String boton;
- 
+
     if (quiere) {
       titulo = 'Solicitar puertas adentro';
       mensaje = 'Se enviará una solicitud al administrador. Cuando la apruebe, las familias verán tu tarifa por día. '
@@ -250,7 +262,7 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       mensaje = 'Dejarás de ofrecer esta modalidad de inmediato.';
       boton = 'Dejar de ofrecer';
     }
- 
+
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (contexto) => AlertDialog(
@@ -263,17 +275,17 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
         ],
       ),
     );
- 
+
     if (confirmado != true || !mounted) return;
- 
+
     final mensajero = ScaffoldMessenger.of(context);
     setState(() => _cambiandoPuertasAdentro = true);
- 
+
     try {
       final actualizado = await CuidadorService.cambiarPuertasAdentro(quiere);
- 
+
       if (!mounted) return;
- 
+
       setState(() => _perfil = actualizado);
       mensajero.showSnackBar(
         SnackBar(
@@ -295,48 +307,99 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       if (mounted) setState(() => _cambiandoPuertasAdentro = false);
     }
   }
- 
+
+  /// El documento se guarda al instante (no depende de "Guardar cambios").
+  Future<void> _adjuntarDocumento() async {
+    if (_subiendoDocumento) return;
+
+    final mensajero = ScaffoldMessenger.of(context);
+
+    final PlatformFile? archivo = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+    );
+    if (archivo == null || !mounted) return;
+
+    if (await DocumentoCuidadorService.demasiadoGrande(archivo)) {
+      mensajero.showSnackBar(
+        const SnackBar(
+          content: Text('El documento pesa más de 5 MB. Elige uno más liviano.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final bytes = await DocumentoCuidadorService.leerBytes(archivo);
+    if (bytes == null) {
+      mensajero.showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo leer el documento. Vuelve a elegirlo.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _subiendoDocumento = true);
+
+    try {
+      final registrado = await DocumentoCuidadorService.subir(bytes);
+
+      if (!mounted) return;
+
+      setState(() => _tieneDocumento = registrado);
+      mensajero.showSnackBar(const SnackBar(content: Text('Documento guardado. El administrador podrá revisarlo.')));
+    } on DocumentoException catch (e) {
+      mensajero.showSnackBar(
+        SnackBar(content: Text(e.mensaje), behavior: SnackBarBehavior.floating),
+      );
+    } finally {
+      if (mounted) setState(() => _subiendoDocumento = false);
+    }
+  }
+
   Future<void> _entendidoAvisoPuertasAdentro() async {
     final aviso = _avisoPuertasAdentro;
     if (aviso == null) return;
- 
+
     setState(() => _avisoPuertasAdentro = null); // se oculta al instante
- 
+
     try {
       await NotificacionesService.marcarLeida(aviso.id);
     } on ApiException {
       // Si no se pudo marcar, el aviso volverá a mostrarse la próxima vez.
     }
   }
- 
+
   String? get _errorTelefono {
     final limpio = _borrador.telefono.replaceAll(' ', '');
     if (limpio.isEmpty) return 'El teléfono es obligatorio.';
     if (!RegExp(r'^(\+?56)?9\d{8}$').hasMatch(limpio)) return 'Formato inválido. Ej: +56 9 1234 5678';
     return null;
   }
- 
+
   String? get _errorDescripcion {
     if (_borrador.descripcionPersonal.length > 500) return 'Máximo 500 caracteres.';
     return null;
   }
- 
+
   bool get _formularioValido =>
       _errorTelefono == null && _errorDescripcion == null && _borrador.especialidadesSeleccionadas.isNotEmpty;
- 
+
   Future<void> _guardarCambios() async {
     setState(() {});
     if (!_formularioValido || _guardando) return;
- 
+
     final mensajero = ScaffoldMessenger.of(context);
- 
+
     setState(() => _guardando = true);
- 
+
     try {
       final guardado = await CuidadorService.guardarPerfil(_borrador);
- 
+
       if (!mounted) return;
- 
+
       setState(() {
         _perfil = guardado;
         _editando = false;
@@ -352,19 +415,19 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       if (mounted) setState(() => _guardando = false);
     }
   }
- 
+
   Future<void> _reportarValoracion(int index, String motivo) async {
     final valoracion = _valoraciones[index];
     final id = valoracion.id;
     if (id == null) return;
- 
+
     final mensajero = ScaffoldMessenger.of(context);
- 
+
     try {
       await CuidadorService.reportarValoracion(id, motivo);
- 
+
       if (!mounted) return;
- 
+
       setState(() {
         valoracion.solicitudRevisionEnviada = true;
         valoracion.motivoRevision = motivo;
@@ -379,7 +442,7 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       );
     }
   }
- 
+
   Future<void> _confirmarCerrarSesion() async {
     final confirmado = await showDialog<bool>(
       context: context,
@@ -401,7 +464,7 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (r) => false);
     }
   }
- 
+
   String _formatearCLP(int valor) {
     final texto = valor.toString();
     final buffer = StringBuffer();
@@ -411,7 +474,7 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
     }
     return '\$${buffer.toString()} CLP';
   }
- 
+
   @override
   Widget build(BuildContext context) {
     if (_cargando || _error != null) {
@@ -443,7 +506,7 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
         ),
       );
     }
- 
+
     return Scaffold(
       backgroundColor: const Color(0xFFFFF7F5),
       bottomNavigationBar: CuidadorBottomNav(
@@ -491,6 +554,12 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
               const SizedBox(height: 16),
               if (!_editando) ...[
                 _TarjetaInformacionPersonal(perfil: _perfil),
+                const SizedBox(height: 16),
+                _TarjetaDocumento(
+                  tieneDocumento: _tieneDocumento,
+                  subiendo: _subiendoDocumento,
+                  onAdjuntar: _adjuntarDocumento,
+                ),
                 const SizedBox(height: 16),
                 _TarjetaSeccion(
                   titulo: 'Descripción personal',
@@ -667,17 +736,17 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
     );
   }
 }
- 
+
 // ---------- Widgets ----------
- 
+
 class _AlertaBanner extends StatelessWidget {
   final Color color;
   final IconData icono;
   final String titulo;
   final String texto;
- 
+
   const _AlertaBanner({required this.color, required this.icono, required this.titulo, required this.texto});
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -703,7 +772,7 @@ class _AlertaBanner extends StatelessWidget {
     );
   }
 }
- 
+
 class _Encabezado extends StatelessWidget {
   final PerfilCuidadorData perfil;
   final File? foto;
@@ -712,7 +781,7 @@ class _Encabezado extends StatelessWidget {
   final bool editando;
   final VoidCallback onEditar;
   final VoidCallback onCancelarEdicion;
- 
+
   const _Encabezado({
     required this.perfil,
     required this.foto,
@@ -722,7 +791,7 @@ class _Encabezado extends StatelessWidget {
     required this.onEditar,
     required this.onCancelarEdicion,
   });
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -762,14 +831,14 @@ class _Encabezado extends StatelessWidget {
     );
   }
 }
- 
+
 class _TarjetaFotoEditable extends StatelessWidget {
   final File? foto;
   final String? fotoUrl;
   final bool subiendo;
   final VoidCallback onCambiarFoto;
   final VoidCallback onQuitarFoto;
- 
+
   const _TarjetaFotoEditable({
     required this.foto,
     required this.fotoUrl,
@@ -777,11 +846,11 @@ class _TarjetaFotoEditable extends StatelessWidget {
     required this.onCambiarFoto,
     required this.onQuitarFoto,
   });
- 
+
   @override
   Widget build(BuildContext context) {
     final tieneFoto = foto != null || (fotoUrl ?? '').isNotEmpty;
- 
+
     return _TarjetaSeccion(
       titulo: 'Foto de perfil',
       child: Row(
@@ -827,14 +896,14 @@ class _TarjetaFotoEditable extends StatelessWidget {
     );
   }
 }
- 
+
 class _TarjetaSeccion extends StatelessWidget {
   final String titulo;
   final Widget child;
   final bool conError;
- 
+
   const _TarjetaSeccion({required this.titulo, required this.child, this.conError = false});
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -861,12 +930,68 @@ class _TarjetaSeccion extends StatelessWidget {
     );
   }
 }
- 
+
+class _TarjetaDocumento extends StatelessWidget {
+  final bool? tieneDocumento;
+  final bool subiendo;
+  final VoidCallback onAdjuntar;
+
+  const _TarjetaDocumento({required this.tieneDocumento, required this.subiendo, required this.onAdjuntar});
+
+  @override
+  Widget build(BuildContext context) {
+    final adjuntado = tieneDocumento == true;
+
+    return _TarjetaSeccion(
+      titulo: 'Documento que acredita tu profesión',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                adjuntado ? Icons.check_circle : Icons.info_outline,
+                size: 16,
+                color: adjuntado ? Colors.green : Colors.orange,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  tieneDocumento == null
+                      ? 'No se pudo comprobar si ya adjuntaste tu documento.'
+                      : adjuntado
+                          ? 'Documento adjuntado. El administrador lo revisa para validar tu perfil.'
+                          : 'Aún no adjuntas tu documento. Sin él, el administrador no puede validar tu perfil.',
+                  style: TextStyle(fontSize: 12, color: adjuntado ? Colors.green[800] : Colors.black87),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: subiendo ? null : onAdjuntar,
+            icon: subiendo
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.upload_file, size: 18),
+            label: Text(subiendo ? 'Subiendo…' : adjuntado ? 'Reemplazar documento' : 'Adjuntar documento'),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'PDF, JPG o PNG, máximo 5 MB. Se guarda al instante y solo lo ve el administrador.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TarjetaInformacionPersonal extends StatelessWidget {
   final PerfilCuidadorData perfil;
- 
+
   const _TarjetaInformacionPersonal({required this.perfil});
- 
+
   @override
   Widget build(BuildContext context) {
     return _TarjetaSeccion(
@@ -888,12 +1013,12 @@ class _TarjetaInformacionPersonal extends StatelessWidget {
     );
   }
 }
- 
+
 class _TarjetaInformacionBloqueada extends StatelessWidget {
   final PerfilCuidadorData perfil;
- 
+
   const _TarjetaInformacionBloqueada({required this.perfil});
- 
+
   @override
   Widget build(BuildContext context) {
     return _TarjetaSeccion(
@@ -913,14 +1038,14 @@ class _TarjetaInformacionBloqueada extends StatelessWidget {
     );
   }
 }
- 
+
 class _CampoBloqueado extends StatelessWidget {
   final String etiqueta;
   final String valor;
   final String? nota;
- 
+
   const _CampoBloqueado({required this.etiqueta, required this.valor, this.nota});
- 
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -942,14 +1067,14 @@ class _CampoBloqueado extends StatelessWidget {
     );
   }
 }
- 
+
 class _DatoConIcono extends StatelessWidget {
   final IconData icono;
   final String etiqueta;
   final String valor;
- 
+
   const _DatoConIcono({required this.icono, required this.etiqueta, required this.valor});
- 
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -970,18 +1095,18 @@ class _DatoConIcono extends StatelessWidget {
     );
   }
 }
- 
+
 class _TarjetaTarifas extends StatelessWidget {
   final PerfilCuidadorData perfil;
   final ProfesionCuidador? infoProfesion;
   final String Function(int) formatear;
- 
+
   const _TarjetaTarifas({required this.perfil, required this.infoProfesion, required this.formatear});
- 
+
   @override
   Widget build(BuildContext context) {
     if (infoProfesion == null) return const SizedBox.shrink();
- 
+
     return _TarjetaSeccion(
       titulo: 'Tarifas',
       child: Column(
@@ -1034,13 +1159,13 @@ class _TarjetaTarifas extends StatelessWidget {
     );
   }
 }
- 
+
 class _CajaTarifa extends StatelessWidget {
   final String etiqueta;
   final String valor;
- 
+
   const _CajaTarifa({required this.etiqueta, required this.valor});
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1058,20 +1183,20 @@ class _CajaTarifa extends StatelessWidget {
     );
   }
 }
- 
+
 class _ChipEspecialidad extends StatelessWidget {
   final String texto;
   final bool seleccionada;
   final bool editable;
   final VoidCallback? onTap;
- 
+
   const _ChipEspecialidad({required this.texto, required this.seleccionada, required this.editable, this.onTap});
- 
+
   @override
   Widget build(BuildContext context) {
     final colorFondo = seleccionada ? Colors.green.withOpacity(0.12) : Colors.grey.shade100;
     final colorTexto = seleccionada ? Colors.green[800] : Colors.grey[700];
- 
+
     return InkWell(
       onTap: editable ? onTap : null,
       borderRadius: BorderRadius.circular(20),
@@ -1098,7 +1223,7 @@ class _ChipEspecialidad extends StatelessWidget {
     );
   }
 }
- 
+
 class _TarjetaValoraciones extends StatelessWidget {
   final List<Valoracion> valoraciones;
   final bool verTodas;
@@ -1107,7 +1232,7 @@ class _TarjetaValoraciones extends StatelessWidget {
   final ValueChanged<int> onSolicitarRevision;
   final void Function(int index, String motivo) onEnviarSolicitud;
   final VoidCallback onCancelarSolicitud;
- 
+
   const _TarjetaValoraciones({
     required this.valoraciones,
     required this.verTodas,
@@ -1117,11 +1242,11 @@ class _TarjetaValoraciones extends StatelessWidget {
     required this.onEnviarSolicitud,
     required this.onCancelarSolicitud,
   });
- 
+
   @override
   Widget build(BuildContext context) {
     final mostradas = verTodas ? valoraciones : valoraciones.take(2).toList();
- 
+
     return _TarjetaSeccion(
       titulo: 'Valoraciones',
       child: Column(
@@ -1151,14 +1276,14 @@ class _TarjetaValoraciones extends StatelessWidget {
     );
   }
 }
- 
+
 class _ItemValoracion extends StatefulWidget {
   final Valoracion valoracion;
   final bool solicitandoRevision;
   final VoidCallback? onSolicitarRevision;
   final ValueChanged<String> onEnviarSolicitud;
   final VoidCallback onCancelarSolicitud;
- 
+
   const _ItemValoracion({
     required this.valoracion,
     required this.solicitandoRevision,
@@ -1166,30 +1291,30 @@ class _ItemValoracion extends StatefulWidget {
     required this.onEnviarSolicitud,
     required this.onCancelarSolicitud,
   });
- 
+
   @override
   State<_ItemValoracion> createState() => _ItemValoracionState();
 }
- 
+
 class _ItemValoracionState extends State<_ItemValoracion> {
   static const _motivos = ['Información falsa', 'Lenguaje ofensivo', 'No corresponde al servicio', 'Contenido inapropiado', 'Otro'];
- 
+
   String? _motivoSeleccionado;
   final _motivoOtroController = TextEditingController();
- 
+
   bool get _esOtro => _motivoSeleccionado == 'Otro';
   bool get _puedeEnviar => _motivoSeleccionado != null && (!_esOtro || _motivoOtroController.text.trim().isNotEmpty);
- 
+
   void _enviar() {
     if (!_puedeEnviar) return;
     final motivoFinal = _esOtro ? _motivoOtroController.text.trim() : _motivoSeleccionado!;
     widget.onEnviarSolicitud(motivoFinal);
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final v = widget.valoracion;
- 
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1245,14 +1370,14 @@ class _ItemValoracionState extends State<_ItemValoracion> {
     );
   }
 }
- 
+
 class _OpcionMotivo extends StatelessWidget {
   final String texto;
   final bool seleccionado;
   final VoidCallback onTap;
- 
+
   const _OpcionMotivo({required this.texto, required this.seleccionado, required this.onTap});
- 
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -1266,19 +1391,19 @@ class _OpcionMotivo extends StatelessWidget {
     );
   }
 }
- 
+
 /// Aviso del administrador sobre la solicitud de puertas adentro.
 class _AvisoAdministrador extends StatelessWidget {
   final NotificacionApp aviso;
   final VoidCallback onEntendido;
- 
+
   const _AvisoAdministrador({required this.aviso, required this.onEntendido});
- 
+
   @override
   Widget build(BuildContext context) {
     final aprobado = aviso.tipo == 'puertas_adentro_aprobada';
     final color = aprobado ? Colors.green : Colors.red;
- 
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
