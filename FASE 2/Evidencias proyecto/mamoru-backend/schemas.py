@@ -97,11 +97,10 @@ class PerfilCuidadorOut(BaseModel):
     fecha_creacion: datetime
     descripcion: Optional[str] = None
     puertas_adentro_pendiente: bool = False
-    puertas_adentro_fecha_solicitud: Optional[datetime] = None
     foto_url: Optional[str] = None
+    puertas_adentro_fecha_solicitud: Optional[datetime] = None
     motivo_rechazo: Optional[str] = None
     fecha_validacion: Optional[datetime] = None
-
 
 
 
@@ -548,6 +547,7 @@ class MiPerfilCuidadorOut(BaseModel):
     estado_validacion: str
     puertas_adentro_pendiente: bool = False
     foto_url: Optional[str] = None
+    tiene_documento: bool = False
 
 
 
@@ -686,6 +686,16 @@ class PuertasAdentroDecision(BaseModel):
 
 class FotoPerfilSubir(BaseModel):
     imagen_base64: str
+ 
+ 
+class DocumentoSubir(BaseModel):
+    archivo_base64: str
+ 
+ 
+class DocumentoEnlaceOut(BaseModel):
+    url: str
+    tipo: str  # "pdf" o "imagen"
+    expira_en_segundos: int
    
 
 

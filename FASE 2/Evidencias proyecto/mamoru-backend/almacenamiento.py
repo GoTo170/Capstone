@@ -1,14 +1,9 @@
-"""Archivos en Supabase Storage (fotos de perfil de los cuidadores).
-
-Usa solo la librería estándar de Python: no hay que instalar nada nuevo.
-La clave de servicio (SUPABASE_SERVICE_KEY) es SECRETA: vive solo en el .env
-del backend. Nunca debe ir en la app, en el panel ni en GitHub.
-"""
 import base64
 import binascii
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -88,7 +83,7 @@ def _config():
     return url, clave
 
 
-def _pedir(metodo, url, clave, cuerpo=None, tipo_contenido=None):
+def _pedir(metodo, url, clave, cuerpo=None, tipo_contenido=None, objeto="la foto"):
     # Supabase tiene dos formatos de clave secreta:
     # - la antigua "service_role" (empieza con "eyJ"): va en las dos cabeceras;
     # - la nueva "sb_secret_..." (no es un JWT): va solo en "apikey".
@@ -109,7 +104,7 @@ def _pedir(metodo, url, clave, cuerpo=None, tipo_contenido=None):
         except Exception:
             pass
         raise ErrorAlmacenamiento(
-            "No se pudo guardar la foto. Inténtalo de nuevo más tarde",
+            f"No se pudo guardar {objeto}. Inténtalo de nuevo más tarde",
             f"HTTP {e.code} en {metodo} {url}: {texto}",
             codigo=e.code,
         ) from e
@@ -145,6 +140,87 @@ def borrar_foto(url_foto: str) -> None:
         _pedir("DELETE", f"{url_base}/storage/v1/object/{BUCKET_FOTOS}/{ruta}", clave)
     except ErrorAlmacenamiento as e:
         print(f"[almacenamiento] No se pudo borrar la foto anterior: {e.detalle}")
+
+
+# ---------------------------------------------------------------- documentos (privados)
+
+BUCKET_DOCUMENTOS = "documentos-cuidadores"  # bucket PRIVADO: nadie accede sin enlace firmado
+MAX_BYTES_DOCUMENTO = 5 * 1024 * 1024
+SEGUNDOS_ENLACE_DOCUMENTO = 3600  # cada enlace dura 1 hora; el documento NO caduca, el panel pide un enlace nuevo cada vez
+
+
+def detectar_documento(datos: bytes):
+    """Devuelve (extensión, tipo de contenido) de un PDF o una imagen, por su contenido real."""
+    if datos[:5] == b"%PDF-":
+        return "pdf", "application/pdf"
+    try:
+        return detectar_imagen(datos)
+    except ValueError:
+        raise ValueError("El documento debe ser un PDF o una imagen (JPG, PNG o WEBP)")
+
+
+def decodificar_documento_base64(texto: str) -> bytes:
+    if not texto or not texto.strip():
+        raise ValueError("No se recibió ningún documento")
+    limpio = texto.strip()
+    if limpio.startswith("data:") and "," in limpio:
+        limpio = limpio.split(",", 1)[1]
+    limpio = "".join(limpio.split())
+    if len(limpio) > (MAX_BYTES_DOCUMENTO * 4) // 3 + 8:
+        raise ValueError(f"El documento es demasiado grande (máximo {MAX_BYTES_DOCUMENTO // (1024 * 1024)} MB)")
+    try:
+        datos = base64.b64decode(limpio, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("El documento no se pudo leer (base64 inválido)")
+    if not datos:
+        raise ValueError("No se recibió ningún documento")
+    if len(datos) > MAX_BYTES_DOCUMENTO:
+        raise ValueError(f"El documento es demasiado grande (máximo {MAX_BYTES_DOCUMENTO // (1024 * 1024)} MB)")
+    return datos
+
+
+def subir_documento(usuario_id: str, contenido: bytes, tipo_contenido: str, extension: str) -> str:
+    """Sube el documento y devuelve su RUTA dentro del bucket privado (no una URL)."""
+    url_base, clave = _config()
+    ruta = f"cuidadores/{usuario_id}/{uuid.uuid4().hex}.{extension}"
+    _pedir("POST", f"{url_base}/storage/v1/object/{BUCKET_DOCUMENTOS}/{ruta}", clave,
+           contenido, tipo_contenido, objeto="el documento")
+    return ruta
+
+
+def borrar_documento(ruta: str) -> None:
+    """Borra un documento anterior; si falla, no detiene nada."""
+    try:
+        url_base, clave = _config()
+        if not ruta or ruta.startswith("http"):
+            return
+        _pedir("DELETE", f"{url_base}/storage/v1/object/{BUCKET_DOCUMENTOS}/{ruta}", clave, objeto="el documento")
+    except ErrorAlmacenamiento as e:
+        print(f"[almacenamiento] No se pudo borrar el documento anterior: {e.detalle}")
+
+
+def enlace_documento(ruta: str, descargar_como: str = None) -> str:
+    """Enlace temporal (firmado) para ver el documento. Con `descargar_como` el navegador
+    lo descarga con ese nombre en vez de abrirlo. El documento guardado no caduca nunca."""
+    url_base, clave = _config()
+    cuerpo = json.dumps({"expiresIn": SEGUNDOS_ENLACE_DOCUMENTO}).encode()
+    _, texto = _pedir("POST", f"{url_base}/storage/v1/object/sign/{BUCKET_DOCUMENTOS}/{ruta}", clave,
+                      cuerpo, "application/json", objeto="el enlace del documento")
+    try:
+        firmado = json.loads(texto)["signedURL"]
+    except (ValueError, KeyError, TypeError):
+        raise ErrorAlmacenamiento("No se pudo abrir el documento", f"Respuesta inesperada: {texto[:200]}")
+    if firmado.startswith("http"):
+        resultado = firmado
+    else:
+        if not firmado.startswith("/"):
+            firmado = "/" + firmado
+        if not firmado.startswith("/storage/v1"):
+            firmado = "/storage/v1" + firmado
+        resultado = url_base + firmado
+    if descargar_como:
+        resultado += "&download=" + urllib.parse.quote(descargar_como)
+    return resultado
 
 
 def estado_almacenamiento() -> dict:

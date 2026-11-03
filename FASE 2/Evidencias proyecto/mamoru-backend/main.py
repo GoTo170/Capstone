@@ -18,10 +18,16 @@ from security import hash_password, verify_password, crear_token_acceso, verific
 
 from almacenamiento import (
     ErrorAlmacenamiento,
+    SEGUNDOS_ENLACE_DOCUMENTO,
+    borrar_documento,
     borrar_foto,
+    decodificar_documento_base64,
     decodificar_imagen_base64,
+    detectar_documento,
     detectar_imagen,
+    enlace_documento,
     estado_almacenamiento,
+    subir_documento,
     subir_foto,
 )
 
@@ -1787,6 +1793,7 @@ def armar_mi_perfil_cuidador(usuario, perfil):
         estado_validacion=perfil.estado_validacion,
         puertas_adentro_pendiente=perfil.puertas_adentro_pendiente,
         foto_url=perfil.foto_url,
+        tiene_documento=bool(perfil.documento_url),
     )
 
 
@@ -1843,6 +1850,80 @@ def quitar_mi_foto(
     db.refresh(cuidador_actual)
     db.refresh(perfil)
     return armar_mi_perfil_cuidador(cuidador_actual, perfil)
+
+
+
+
+# ============================================================
+# Documento que acredita al cuidador (bucket privado)
+# ============================================================
+
+@app.put("/cuidador/mi-documento", response_model=schemas.MiPerfilCuidadorOut)
+def subir_mi_documento(
+    datos: schemas.DocumentoSubir,
+    db: Session = Depends(get_db),
+    cuidador_actual: models.Usuario = Depends(requerir_rol("cuidador")),
+):
+    """El cuidador adjunta (o reemplaza) el documento que respalda su profesión."""
+    perfil = obtener_perfil_del_cuidador(db, cuidador_actual)
+
+    try:
+        contenido = decodificar_documento_base64(datos.archivo_base64)
+        extension, tipo_contenido = detectar_documento(contenido)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        ruta_nueva = subir_documento(str(cuidador_actual.id), contenido, tipo_contenido, extension)
+    except ErrorAlmacenamiento as e:
+        print(f"[almacenamiento] {e.mensaje} | {e.detalle}")
+        raise HTTPException(status_code=502, detail=e.mensaje)
+
+    ruta_anterior = perfil.documento_url
+    perfil.documento_url = ruta_nueva
+    db.commit()
+
+    if ruta_anterior:
+        borrar_documento(ruta_anterior)
+
+    db.refresh(cuidador_actual)
+    db.refresh(perfil)
+    return armar_mi_perfil_cuidador(cuidador_actual, perfil)
+
+
+@app.get("/cuidadores/{cuidador_id}/documento", response_model=schemas.DocumentoEnlaceOut)
+def ver_documento_cuidador(
+    cuidador_id: str,
+    descargar: bool = False,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    """Solo el administrador: enlace para abrir o descargar (descargar=true) el documento
+    antes de aprobar o rechazar. El documento queda guardado; solo el enlace es temporal."""
+    perfil = db.query(models.PerfilCuidador).filter(models.PerfilCuidador.id == cuidador_id).first()
+    if not perfil:
+        raise HTTPException(status_code=404, detail="Cuidador no encontrado")
+    if not perfil.documento_url:
+        raise HTTPException(status_code=404, detail="Este cuidador no ha adjuntado un documento")
+
+    extension = perfil.documento_url.rsplit(".", 1)[-1].lower()
+    nombre_descarga = None
+    if descargar:
+        dueno = db.query(models.Usuario).filter(models.Usuario.id == perfil.usuario_id).first()
+        base = f"{dueno.nombre} {dueno.apellido or ''}".strip() if dueno else "cuidador"
+        base = "".join(c if c.isalnum() else "-" for c in base.lower()).strip("-") or "cuidador"
+        nombre_descarga = f"documento-{base}.{extension}"
+
+    try:
+        url = enlace_documento(perfil.documento_url, nombre_descarga)
+    except ErrorAlmacenamiento as e:
+        print(f"[almacenamiento] {e.mensaje} | {e.detalle}")
+        raise HTTPException(status_code=502, detail=e.mensaje)
+
+    tipo = "pdf" if extension == "pdf" else "imagen"
+    return schemas.DocumentoEnlaceOut(url=url, tipo=tipo, expira_en_segundos=SEGUNDOS_ENLACE_DOCUMENTO)
+
+
 
 
 @app.get("/admin/almacenamiento")
@@ -2840,6 +2921,3 @@ def actualizar_contactos_emergencia(
     for n in nuevos:
         db.refresh(n)
     return nuevos
-
-
- 
