@@ -7,6 +7,7 @@ import '../models/profesion_cuidador.dart';
 import '../widgets/password_requirements_grid.dart';
 import '../../../core/api_exception.dart';
 import '../services/auth_service.dart';
+import '../services/documento_cuidador_service.dart';
 import '../widgets/validated_text_field.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -35,6 +36,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _confirmarPasswordVisible = false;
   bool _formularioFueEnviado = false;
   bool _enviando = false;
+
+  // Si la cuenta ya se creó pero falló la subida del documento, el siguiente
+  // intento no vuelve a crear la cuenta: solo reintenta adjuntar el documento.
+  bool _cuentaCreada = false;
+  String _emailCreado = '';
+  String _passwordCreado = '';
 
   static const _caracteresEspeciales = r'''!@#$%^&*()_+\-=\[\]{}|;:'",.<>/?~`\\''';
 
@@ -170,12 +177,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
     allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
   );
 
-  if (archivo != null) {
-    setState(() {
-      _documentoSeleccionado = archivo;
-    });
+  if (archivo == null || !mounted) return;
+
+  final grande = await DocumentoCuidadorService.demasiadoGrande(archivo);
+  if (!mounted) return;
+
+  if (grande) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('El documento pesa más de 5 MB. Elige uno más liviano.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    return;
   }
+
+  setState(() {
+    _documentoSeleccionado = archivo;
+  });
 }
+
+  /// Con la cuenta recién creada: inicia sesión un momento, sube el documento
+  /// y cierra la sesión (el cuidador queda pendiente de validación).
+  Future<void> _subirDocumentoTrasRegistro() async {
+    final bytes = await DocumentoCuidadorService.leerBytes(_documentoSeleccionado!);
+    if (bytes == null) {
+      throw const DocumentoException('No se pudo leer el documento seleccionado. Vuelve a elegirlo.');
+    }
+
+    await AuthService.iniciarSesion(_emailCreado, _passwordCreado);
+    try {
+      await DocumentoCuidadorService.subir(bytes);
+    } finally {
+      AuthService.cerrarSesion();
+    }
+  }
 
   Future<void> _crearCuenta() async {
     setState(() {
@@ -220,24 +256,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
     // TODO (siguientes etapas):
     // - Verificación del correo con código de 6 dígitos (requiere servicio
     //   de envío de correos en el backend).
-    // - Subir el documento que respalda la profesión (_documentoSeleccionado)
-    //   y los datos de la carta de recomendación.
+    // - Guardar los datos de la carta de recomendación.
 
     try {
-      await AuthService.registrar(
-        nombre: _nombreController.text.trim(),
-        apellido: _apellidoController.text.trim(),
-        email: email,
-        password: _passwordController.text,
-        rol: _rolSeleccionado!,
-        profesion: _profesion?.nombre,
-        esAreaSalud: _profesion?.categoria == CategoriaProfesion.areaSalud,
-        experiencia: _requiereExperiencia
-            ? '${_experienciaController.text.trim()} años de experiencia'
-            : null,
-        serviciosOfrecidos:
-            _puertasAdentro == true ? 'Cuidado puertas adentro' : null,
-      );
+      if (!_cuentaCreada) {
+        await AuthService.registrar(
+          nombre: _nombreController.text.trim(),
+          apellido: _apellidoController.text.trim(),
+          email: email,
+          password: _passwordController.text,
+          rol: _rolSeleccionado!,
+          profesion: _profesion?.nombre,
+          esAreaSalud: _profesion?.categoria == CategoriaProfesion.areaSalud,
+          experiencia: _requiereExperiencia
+              ? '${_experienciaController.text.trim()} años de experiencia'
+              : null,
+          serviciosOfrecidos:
+              _puertasAdentro == true ? 'Cuidado puertas adentro' : null,
+        );
+        _cuentaCreada = true;
+        _emailCreado = email;
+        _passwordCreado = _passwordController.text;
+      }
+
+      // El documento que acredita la profesión se sube apenas existe la cuenta.
+      if (_esCuidador && _documentoSeleccionado != null) {
+        await _subirDocumentoTrasRegistro();
+      }
 
       if (!mounted) return;
 
@@ -261,11 +306,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         );
       }
+    } on DocumentoException catch (e) {
+      mensajero.showSnackBar(
+        SnackBar(
+          content: Text('${e.mensaje} Tu cuenta ya fue creada: toca «Crear cuenta» para reintentar adjuntar el documento.'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+        ),
+      );
     } on ApiException catch (e) {
       mensajero.showSnackBar(
         SnackBar(
-          content: Text(e.mensaje),
+          content: Text(
+            _cuentaCreada
+                ? '${e.mensaje} Tu cuenta ya fue creada: toca «Crear cuenta» para reintentar adjuntar el documento.'
+                : e.mensaje,
+          ),
           behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: _cuentaCreada ? 8 : 4),
         ),
       );
     } finally {
