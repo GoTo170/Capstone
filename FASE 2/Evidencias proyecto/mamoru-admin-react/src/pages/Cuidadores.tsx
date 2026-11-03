@@ -6,7 +6,7 @@ import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaCompleta, nombreCompleto } from '../lib/formato'
-import type { ContextoLayout, PerfilCuidador } from '../lib/tipos'
+import type { ContextoLayout, DocumentoEnlace, PerfilCuidador } from '../lib/tipos'
 
 type Pestana = 'aprobado' | 'pendiente' | 'rechazado' | 'puertas'
 
@@ -162,6 +162,7 @@ export default function Cuidadores() {
   const [motivo, setMotivo] = useState('')
   const [rechazo, setRechazo] = useState<AccionRechazo | null>(null)
   const [detalle, setDetalle] = useState<DetalleRechazo | null>(null)
+  const [documentoCargando, setDocumentoCargando] = useState<string | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -199,6 +200,36 @@ export default function Cuidadores() {
       setError(e instanceof Error ? e.message : 'Error al actualizar el cuidador')
     } finally {
       setProcesando(null)
+    }
+  }
+
+  // El documento está en un espacio privado: se pide un enlace nuevo cada vez que se abre o descarga.
+  async function verDocumento(perfil: PerfilCuidador, descargar: boolean) {
+    setDocumentoCargando(perfil.id)
+    setError('')
+    // La pestaña se abre antes de la petición para que el navegador no la bloquee.
+    const ventana = descargar ? null : window.open('', '_blank')
+    try {
+      const enlace = await apiFetch<DocumentoEnlace>(
+        `/cuidadores/${perfil.id}/documento${descargar ? '?descargar=true' : ''}`,
+      )
+      if (descargar) {
+        const a = document.createElement('a')
+        a.href = enlace.url
+        a.download = ''
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      } else if (ventana) {
+        ventana.location.href = enlace.url
+      } else {
+        window.open(enlace.url, '_blank')
+      }
+    } catch (e) {
+      ventana?.close()
+      setError(e instanceof Error ? e.message : 'No se pudo abrir el documento')
+    } finally {
+      setDocumentoCargando(null)
     }
   }
 
@@ -404,6 +435,35 @@ export default function Cuidadores() {
                 </span>
 
                 {c.estado_validacion === 'rechazado' && <div className="cell-sub">Haz clic para ver el motivo</div>}
+
+                {c.documento_url ? (
+                  <div
+                    className="cg-actions"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="btn"
+                      disabled={documentoCargando === c.id}
+                      onClick={() => verDocumento(c, false)}
+                    >
+                      {documentoCargando === c.id ? 'Abriendo…' : 'Ver documento'}
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={documentoCargando === c.id}
+                      onClick={() => verDocumento(c, true)}
+                    >
+                      Descargar
+                    </button>
+                  </div>
+                ) : (
+                  c.estado_validacion === 'pendiente' && (
+                    <span className="pill pending" style={{ alignSelf: 'flex-start' }}>
+                      Sin documento adjunto
+                    </span>
+                  )
+                )}
 
                 {c.estado_validacion === 'aprobado' && !perfilCompleto(c, usuario) && (
                   <span className="pill pending" style={{ alignSelf: 'flex-start' }}>

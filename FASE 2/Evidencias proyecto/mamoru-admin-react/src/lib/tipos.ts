@@ -96,3 +96,9 @@ export interface Valoracion {
   motivo_reporte: string | null
   habilitada: boolean
 }
+
+export interface DocumentoEnlace {
+  url: string
+  tipo: string
+  expira_en_segundos: number
+}
