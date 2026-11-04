@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { apiFetch, cerrarSesion, obtenerUsuarioSesion } from '../lib/api'
+import {
+  ETIQUETA_ROL_INTERNO,
+  apiFetch,
+  cerrarSesion,
+  obtenerUsuarioSesion,
+  refrescarUsuarioSesion,
+  rolInternoDe,
+  tienePermiso,
+  type Permiso,
+} from '../lib/api'
 import type { AlertaSOS, CambioAdulto, ContextoLayout, PerfilCuidador } from '../lib/tipos'
 import { useTheme } from '../lib/useTheme'
 import Notificaciones from './Notificaciones'
@@ -9,18 +18,20 @@ interface Enlace {
   to: string
   texto: string
   end?: boolean
+  // Permiso necesario para ver la sección (vacío = todos los roles internos).
+  permiso?: Permiso
 }
 
 const enlaces: Enlace[] = [
   { to: '/', texto: 'Dashboard', end: true },
-  { to: '/usuarios', texto: 'Usuarios' },
-  { to: '/cuidadores', texto: 'Cuidadores' },
-  { to: '/marketplace', texto: 'Marketplace' },
-  { to: '/solicitudes', texto: 'Solicitudes' },
-  { to: '/cambios-adulto-mayor', texto: 'Cambios de datos' },
-  { to: '/alertas-sos', texto: 'Alertas SOS' },
+  { to: '/usuarios', texto: 'Usuarios', permiso: 'usuarios' },
+  { to: '/cuidadores', texto: 'Cuidadores', permiso: 'cuidadores' },
+  { to: '/marketplace', texto: 'Marketplace', permiso: 'cuidadores' },
+  { to: '/solicitudes', texto: 'Solicitudes', permiso: 'soporte' },
+  { to: '/cambios-adulto-mayor', texto: 'Cambios de datos', permiso: 'soporte' },
+  { to: '/alertas-sos', texto: 'Alertas SOS', permiso: 'soporte' },
   { to: '/reportes', texto: 'Reportes' },
-  { to: '/auditoria', texto: 'Auditoría' },
+  { to: '/auditoria', texto: 'Auditoría', permiso: 'auditoria' },
   { to: '/config', texto: 'Configuración' },
 ]
 
@@ -31,28 +42,43 @@ export default function Layout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const { tema, alternar } = useTheme()
-  const usuario = obtenerUsuarioSesion()
+  const [usuario, setUsuario] = useState(obtenerUsuarioSesion)
   const [pendientes, setPendientes] = useState(0)
   const [sosActivas, setSosActivas] = useState(0)
   const [cambiosPendientes, setCambiosPendientes] = useState(0)
 
-  const refrescarPendientes = useCallback(() => {
-    apiFetch<PerfilCuidador[]>('/cuidadores')
-      .then((lista) =>
-        // Cuenta perfiles por aprobar y solicitudes de puertas adentro por resolver.
-        setPendientes(lista.filter((c) => c.estado_validacion === 'pendiente' || c.puertas_adentro_pendiente).length),
-      )
-      .catch(() => {})
-    apiFetch<CambioAdulto[]>('/admin/cambios-adulto-mayor')
-      .then((lista) => setCambiosPendientes(lista.filter((c) => c.estado === 'pendiente').length))
+  const puedeCuidadores = tienePermiso(usuario, 'cuidadores')
+  const puedeSoporte = tienePermiso(usuario, 'soporte')
+
+  // Por si su rol cambió desde que inició sesión, se vuelve a pedir al servidor.
+  useEffect(() => {
+    refrescarUsuarioSesion()
+      .then((u) => u && setUsuario(u))
       .catch(() => {})
   }, [])
 
+  const refrescarPendientes = useCallback(() => {
+    if (puedeCuidadores) {
+      apiFetch<PerfilCuidador[]>('/cuidadores')
+        .then((lista) =>
+          // Cuenta perfiles por aprobar y solicitudes de puertas adentro por resolver.
+          setPendientes(lista.filter((c) => c.estado_validacion === 'pendiente' || c.puertas_adentro_pendiente).length),
+        )
+        .catch(() => {})
+    }
+    if (puedeSoporte) {
+      apiFetch<CambioAdulto[]>('/admin/cambios-adulto-mayor')
+        .then((lista) => setCambiosPendientes(lista.filter((c) => c.estado === 'pendiente').length))
+        .catch(() => {})
+    }
+  }, [puedeCuidadores, puedeSoporte])
+
   const refrescarSOS = useCallback(() => {
+    if (!puedeSoporte) return
     apiFetch<AlertaSOS[]>('/alertas-sos')
       .then((lista) => setSosActivas(lista.filter((a) => a.estado === 'activa').length))
       .catch(() => {})
-  }, [])
+  }, [puedeSoporte])
 
   useEffect(() => {
     refrescarPendientes()
@@ -115,7 +141,7 @@ export default function Layout() {
 
             <div className="user-chip">
               <div className="who">{usuario?.nombre}</div>
-              <div className="role">Administrador</div>
+              <div className="role">{ETIQUETA_ROL_INTERNO[rolInternoDe(usuario)] ?? 'Administrador'}</div>
             </div>
 
             <button className="btn-logout" onClick={salir}>
@@ -130,7 +156,7 @@ export default function Layout() {
         </div>
 
         <nav className="top-nav">
-          {enlaces.map((enlace) => (
+          {enlaces.filter((e) => tienePermiso(usuario, e.permiso)).map((enlace) => (
             <NavLink
               key={enlace.to}
               to={enlace.to}

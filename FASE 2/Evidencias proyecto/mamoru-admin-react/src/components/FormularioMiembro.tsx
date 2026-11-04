@@ -1,10 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import { apiFetch, type Usuario } from '../lib/api'
+import { DESCRIPCION_ROL_INTERNO, ETIQUETA_ROL_INTERNO, ROLES_INTERNOS, apiFetch, rolInternoDe, type Usuario } from '../lib/api'
 import { normalizar } from '../lib/busqueda'
 import { nombreCompleto } from '../lib/formato'
 import Modal from './Modal'
-
-const ROLES_INTERNOS = [{ valor: 'administrador', texto: 'Administrador' }]
 
 interface Props {
   onCerrar: () => void
@@ -26,7 +24,7 @@ function descargarCredenciales({ usuario, password }: Creado) {
     'MAMORU — Credenciales de acceso al Panel Administrativo',
     '',
     `Nombre: ${nombreCompleto(usuario)}`,
-    'Rol: Administrador',
+    `Rol: ${ETIQUETA_ROL_INTERNO[rolInternoDe(usuario)] ?? 'Administrador'}`,
     `Correo: ${usuario.email ?? ''}`,
     `Contraseña: ${password}`,
     '',
@@ -51,7 +49,8 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
   const [nombre, setNombre] = useState('')
   const [apellido, setApellido] = useState('')
   const [email, setEmail] = useState('')
-  const [rol, setRol] = useState(ROLES_INTERNOS[0].valor)
+  // Por defecto el de menos alcance: el superadmin se elige a propósito.
+  const [rolInterno, setRolInterno] = useState<string>('soporte')
   const [automatica, setAutomatica] = useState(true)
   const [password, setPassword] = useState('')
   const [confirmar, setConfirmar] = useState('')
@@ -87,7 +86,8 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
           apellido: apellido.trim(),
           email: email.trim(),
           password: claveFinal,
-          rol,
+          rol: 'administrador',
+          rol_interno: rolInterno,
         }),
       })
       setCreado({ usuario, password: claveFinal })
@@ -125,7 +125,7 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
           <dt>Contraseña</dt>
           <dd>{creado.password}</dd>
           <dt>Rol</dt>
-          <dd>{ROLES_INTERNOS.find((r) => r.valor === creado.usuario.rol)?.texto ?? creado.usuario.rol}</dd>
+          <dd>{ETIQUETA_ROL_INTERNO[rolInternoDe(creado.usuario)] ?? creado.usuario.rol}</dd>
         </dl>
         <p className="ayuda">
           La contraseña solo se muestra ahora: el sistema la guarda cifrada y no podrá volver a consultarse. Descarga
@@ -183,13 +183,14 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
 
         <div className="field">
           <label htmlFor="mm-rol">Rol</label>
-          <select id="mm-rol" value={rol} onChange={(e) => setRol(e.target.value)}>
+          <select id="mm-rol" value={rolInterno} onChange={(e) => setRolInterno(e.target.value)}>
             {ROLES_INTERNOS.map((r) => (
-              <option key={r.valor} value={r.valor}>
-                {r.texto}
+              <option key={r} value={r}>
+                {ETIQUETA_ROL_INTERNO[r]}
               </option>
             ))}
           </select>
+          <div className="ayuda">{DESCRIPCION_ROL_INTERNO[rolInterno]}</div>
         </div>
 
         <label className="opcion-check">

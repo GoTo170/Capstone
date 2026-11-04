@@ -9,6 +9,8 @@ export interface Usuario {
   apellido: string | null
   email: string | null
   rol: string
+  // Solo administradores: 'superadmin' | 'moderador' | 'soporte'. Vacío = superadmin.
+  rol_interno?: string | null
   telefono: string | null
   activo: boolean
   fecha_creacion: string
@@ -18,6 +20,46 @@ export interface LoginResponse {
   access_token: string
   token_type: string
   usuario: Usuario
+}
+
+// ---------------------------------------------------------------------------
+// Roles internos y permisos (el servidor es quien manda; esto solo decide qué
+// menús y pantallas mostrar). Debe coincidir con PERMISOS_POR_ROL_INTERNO del backend.
+// ---------------------------------------------------------------------------
+export type Permiso = 'cuidadores' | 'soporte' | 'reportes' | 'usuarios' | 'auditoria' | 'equipo'
+
+export const ROLES_INTERNOS = ['superadmin', 'moderador', 'soporte'] as const
+
+export const ETIQUETA_ROL_INTERNO: Record<string, string> = {
+  superadmin: 'Superadmin',
+  moderador: 'Moderador de cuidadores',
+  soporte: 'Soporte / SOS',
+}
+
+export const DESCRIPCION_ROL_INTERNO: Record<string, string> = {
+  superadmin: 'Acceso total',
+  moderador: 'Cuidadores, documentos, puertas adentro, reseñas y reportes',
+  soporte: 'Alertas SOS, cambios de datos del adulto mayor, solicitudes y reportes',
+}
+
+const PERMISOS_POR_ROL: Record<string, Permiso[] | null> = {
+  superadmin: null, // null = todos
+  moderador: ['cuidadores', 'reportes'],
+  soporte: ['soporte', 'reportes'],
+}
+
+export function rolInternoDe(usuario: Usuario | null): string {
+  return usuario?.rol_interno || 'superadmin'
+}
+
+/** Sin permiso requerido (undefined) = cualquier administrador. */
+export function tienePermiso(usuario: Usuario | null, permiso?: Permiso): boolean {
+  if (!usuario || usuario.rol !== 'administrador') return false
+  if (!permiso) return true
+  const rol = rolInternoDe(usuario)
+  if (!(rol in PERMISOS_POR_ROL)) return false // un valor desconocido no recibe permisos
+  const permisos = PERMISOS_POR_ROL[rol]
+  return permisos === null || permisos.includes(permiso)
 }
 
 export function guardarSesion(token: string, usuario: Usuario): void {
@@ -70,4 +112,16 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   if (respuesta.status === 204) return null as T
   return (await respuesta.json()) as T
+}
+
+/**
+ * Vuelve a pedir los datos del usuario al servidor (por si su rol cambió desde que
+ * inició sesión) y los guarda. Devuelve el usuario actualizado.
+ */
+export async function refrescarUsuarioSesion(): Promise<Usuario | null> {
+  const token = obtenerToken()
+  if (!token) return null
+  const usuario = await apiFetch<Usuario>('/perfil')
+  guardarSesion(token, usuario)
+  return usuario
 }
