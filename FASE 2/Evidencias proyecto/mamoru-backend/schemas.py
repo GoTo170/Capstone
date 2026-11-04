@@ -32,6 +32,7 @@ class UsuarioOut(BaseModel):
     apellido: Optional[str] = None
     email: Optional[EmailStr] = None
     rol: str
+    rol_interno: Optional[str] = None
     telefono: Optional[str] = None
     activo: bool
     fecha_creacion: datetime
@@ -439,6 +440,7 @@ class MiembroEquipoCreate(BaseModel):
     email: EmailStr
     password: str
     rol: str = "administrador"
+    rol_interno: Optional[str] = None  # superadmin, moderador o soporte
     telefono: Optional[str] = None
 
 
@@ -768,3 +770,6 @@ class CambioAdultoPanelOut(BaseModel):
 class CambioAdultoDecision(BaseModel):
     aprobar: bool
     motivo: Optional[str] = None
+
+class RolInternoCambio(BaseModel):
+    rol_interno: str  # superadmin, moderador o soporte

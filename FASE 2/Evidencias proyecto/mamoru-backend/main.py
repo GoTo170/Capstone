@@ -90,6 +90,47 @@ def requerir_rol(rol_esperado: str):
     return dependencia
 
 
+# ------------------------------------------------------------
+# Roles internos del panel
+# ------------------------------------------------------------
+# Todos siguen siendo rol = "administrador"; lo que cambia es rol_interno:
+#   superadmin  -> todo (también los administradores que no tienen rol_interno)
+#   moderador   -> cuidadores, documentos, puertas adentro, reseñas, reportes
+#   soporte     -> alertas SOS, cambios de datos del adulto mayor, reportes
+# Permisos: cuidadores, soporte, reportes, usuarios, auditoria, equipo.
+# usuarios, auditoria y equipo son solo del superadmin.
+ROLES_INTERNOS_EQUIPO = ("superadmin", "moderador", "soporte")
+PERMISOS_POR_ROL_INTERNO = {
+    "superadmin": None,  # None = todos los permisos
+    "moderador": {"cuidadores", "reportes"},
+    "soporte": {"soporte", "reportes"},
+}
+
+
+def rol_interno_de(usuario) -> str:
+    return getattr(usuario, "rol_interno", None) or "superadmin"
+
+
+def tiene_permiso(usuario, permiso: str) -> bool:
+    if usuario.rol != "administrador":
+        return False
+    rol = rol_interno_de(usuario)
+    if rol not in PERMISOS_POR_ROL_INTERNO:
+        return False  # un valor desconocido no recibe permisos
+    permisos = PERMISOS_POR_ROL_INTERNO[rol]
+    return permisos is None or permiso in permisos
+
+
+def requerir_permiso(permiso: str):
+    def dependencia(usuario_actual: models.Usuario = Depends(obtener_usuario_actual)):
+        if usuario_actual.rol != "administrador":
+            raise HTTPException(status_code=403, detail="Esta acción requiere permisos de administrador")
+        if not tiene_permiso(usuario_actual, permiso):
+            raise HTTPException(status_code=403, detail="Tu rol no tiene permiso para esta acción")
+        return usuario_actual
+    return dependencia
+
+
 # ============================================================
 # Funciones de apoyo
 # ============================================================
@@ -250,7 +291,7 @@ def cambiar_estado_usuario(
     usuario_id: str,
     datos: schemas.UsuarioEstado,
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(requerir_administrador),
+    usuario_actual: models.Usuario = Depends(requerir_permiso("usuarios")),
 ):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
     if not usuario:
@@ -268,17 +309,16 @@ def cambiar_estado_usuario(
 
     return usuario
 
-ROLES_INTERNOS = ("administrador",)
-
-
 @app.post("/usuarios/equipo", response_model=schemas.UsuarioOut)
 def crear_miembro_equipo(
     datos: schemas.MiembroEquipoCreate,
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(requerir_administrador),
+    usuario_actual: models.Usuario = Depends(requerir_permiso("equipo")),
 ):
-    if datos.rol not in ROLES_INTERNOS:
+    if datos.rol != "administrador":
         raise HTTPException(status_code=400, detail="Rol no permitido para el equipo interno")
+    if datos.rol_interno not in ROLES_INTERNOS_EQUIPO:
+        raise HTTPException(status_code=400, detail="Indica el rol interno: superadmin, moderador o soporte")
     if len(datos.password) < 8:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
 
@@ -292,6 +332,7 @@ def crear_miembro_equipo(
         email=datos.email,
         password_hash=hash_password(datos.password),
         rol=datos.rol,
+        rol_interno=datos.rol_interno,
         telefono=datos.telefono,
         email_verificado=True,
     )
@@ -299,10 +340,52 @@ def crear_miembro_equipo(
     db.commit()
     db.refresh(nuevo)
 
-    detalle = f"{nuevo.nombre} {nuevo.apellido or ''}".strip() + f" ({nuevo.rol})"
+    detalle = f"{nuevo.nombre} {nuevo.apellido or ''}".strip() + f" ({nuevo.rol_interno})"
     registrar_auditoria(db, usuario_actual.id, "Creó miembro del equipo", "usuario", nuevo.id, detalle)
 
     return nuevo
+
+
+@app.patch("/usuarios/equipo/{usuario_id}/rol", response_model=schemas.UsuarioOut)
+def cambiar_rol_interno(
+    usuario_id: str,
+    datos: schemas.RolInternoCambio,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_permiso("equipo")),
+):
+    if datos.rol_interno not in ROLES_INTERNOS_EQUIPO:
+        raise HTTPException(status_code=400, detail="Rol interno no válido: superadmin, moderador o soporte")
+
+    objetivo = db.query(models.Usuario).filter(
+        models.Usuario.id == _uuid_o_404(usuario_id, "Usuario no encontrado")
+    ).first()
+    if not objetivo or objetivo.rol != "administrador":
+        raise HTTPException(status_code=404, detail="Miembro del equipo no encontrado")
+    if str(objetivo.id) == str(admin_actual.id):
+        raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
+
+    anterior = rol_interno_de(objetivo)
+    if anterior == datos.rol_interno:
+        raise HTTPException(status_code=400, detail="Esa persona ya tiene ese rol")
+
+    # Siempre debe quedar al menos otro superadmin activo.
+    if anterior == "superadmin":
+        otros = db.query(models.Usuario).filter(
+            models.Usuario.rol == "administrador",
+            models.Usuario.activo == True,  # noqa: E712
+            models.Usuario.id != objetivo.id,
+        ).all()
+        if not any(rol_interno_de(u) == "superadmin" for u in otros):
+            raise HTTPException(status_code=400, detail="Debe quedar al menos un superadmin activo")
+
+    objetivo.rol_interno = datos.rol_interno
+    db.commit()
+    db.refresh(objetivo)
+
+    detalle = f"{objetivo.nombre} {objetivo.apellido or ''}".strip() + f": {anterior} → {datos.rol_interno}"
+    registrar_auditoria(db, admin_actual.id, "Cambió rol interno", "usuario", objetivo.id, detalle)
+
+    return objetivo
 
 @app.post("/login", response_model=schemas.Token)
 def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
@@ -409,7 +492,7 @@ def actualizar_estado_cuidador(
     cuidador_id: str,
     datos: schemas.PerfilCuidadorUpdate,
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(requerir_administrador),
+    usuario_actual: models.Usuario = Depends(requerir_permiso("cuidadores")),
 ):
     if datos.estado_validacion not in ("pendiente", "aprobado", "rechazado"):
         raise HTTPException(status_code=400, detail="estado_validacion inválido")
@@ -1728,7 +1811,7 @@ def resolver_puertas_adentro(
     cuidador_id: str,
     datos: schemas.PuertasAdentroDecision,
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("cuidadores")),
 ):
     perfil = db.query(models.PerfilCuidador).filter(models.PerfilCuidador.id == cuidador_id).first()
     if not perfil:
@@ -1898,7 +1981,7 @@ def ver_documento_cuidador(
     cuidador_id: str,
     descargar: bool = False,
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("cuidadores")),
 ):
     """Solo el administrador: enlace para abrir o descargar (descargar=true) el documento
     antes de aprobar o rechazar. El documento queda guardado; solo el enlace es temporal."""
@@ -1930,7 +2013,7 @@ def ver_documento_cuidador(
 
 @app.get("/admin/almacenamiento")
 def diagnostico_almacenamiento(
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("equipo")),
 ):
     """Revisa que el almacenamiento de archivos esté bien configurado."""
     return estado_almacenamiento()
@@ -2217,7 +2300,7 @@ def moderar_valoracion(
     valoracion_id: str,
     datos: schemas.ValoracionModerar,
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(requerir_administrador),
+    usuario_actual: models.Usuario = Depends(requerir_permiso("cuidadores")),
 ):
     valoracion = db.query(models.Valoracion).filter(models.Valoracion.id == valoracion_id).first()
     if not valoracion:
@@ -2266,7 +2349,7 @@ def listar_valoraciones(
 @app.get("/admin/resenas", response_model=list[schemas.ValoracionAdminOut])
 def listar_resenas_admin(
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(requerir_administrador),
+    usuario_actual: models.Usuario = Depends(requerir_permiso("cuidadores")),
 ):
     """Todas las reseñas con quién las escribió y a quién, para moderarlas en el panel."""
     filas = (
@@ -2305,7 +2388,7 @@ def listar_resenas_admin(
 @app.get("/auditoria", response_model=list[schemas.AuditoriaOut])
 def listar_auditoria(
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(requerir_administrador),
+    usuario_actual: models.Usuario = Depends(requerir_permiso("auditoria")),
 ):
     return db.query(models.Auditoria).order_by(models.Auditoria.fecha.desc()).all()
 
@@ -2328,7 +2411,7 @@ def reportes_panel(
     hasta: date | None = None,
     rol: str | None = None,
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("reportes")),
 ):
     """
     Reporte por período (fecha de registro de usuarios y fecha de solicitud de servicios).
@@ -2448,7 +2531,7 @@ ESTADOS_SOS_FINALES = ("atendida", "cancelada")
 @app.get("/admin/alertas-sos", response_model=list[schemas.AlertaSOSPanelOut])
 def listar_alertas_sos_panel(
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("soporte")),
 ):
     alertas = db.query(models.AlertaSOS).order_by(models.AlertaSOS.fecha_alerta.desc()).all()
 
@@ -2490,7 +2573,7 @@ def actualizar_estado_alerta_sos(
     alerta_id: str,
     datos: schemas.AlertaSOSEstadoUpdate,
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("soporte")),
 ):
     if datos.estado not in ESTADOS_SOS_FINALES:
         raise HTTPException(status_code=400, detail="Estado no válido (usa 'atendida' o 'cancelada')")
@@ -3029,7 +3112,7 @@ def proponer_cambio_adulto_mayor(
 @app.get("/admin/cambios-adulto-mayor", response_model=list[schemas.CambioAdultoPanelOut])
 def listar_cambios_adulto_mayor(
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("soporte")),
 ):
     solicitudes = db.query(models.SolicitudCambioAdulto).order_by(
         models.SolicitudCambioAdulto.fecha_solicitud.desc()
@@ -3068,7 +3151,7 @@ def resolver_cambio_adulto_mayor(
     cambio_id: str,
     datos: schemas.CambioAdultoDecision,
     db: Session = Depends(get_db),
-    admin_actual: models.Usuario = Depends(requerir_administrador),
+    admin_actual: models.Usuario = Depends(requerir_permiso("soporte")),
 ):
     solicitud = db.query(models.SolicitudCambioAdulto).filter(
         models.SolicitudCambioAdulto.id == _uuid_o_404(cambio_id, "Solicitud no encontrada")

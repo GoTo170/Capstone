@@ -13,6 +13,7 @@ class Usuario(Base):
     email = Column(String(150), unique=True)
     password_hash = Column(String(255))
     rol = Column(String(20), nullable=False)
+    rol_interno = Column(String(20))  # solo administradores: superadmin, moderador, soporte (vacío = superadmin)
     telefono = Column(String(20))
     activo = Column(Boolean, default=True)
     codigo_verificacion = Column(String(10))
