@@ -3,9 +3,11 @@ import { useOutletContext } from 'react-router-dom'
 import BarraBusqueda from '../components/BarraBusqueda'
 import Modal from '../components/Modal'
 import PanelFiltros from '../components/PanelFiltros'
+import Paginacion from '../components/Paginacion'
 import { apiFetch, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaCompleta, nombreCompleto } from '../lib/formato'
+import { usePaginacion } from '../lib/usePaginacion'
 import type { ContextoLayout, DocumentoEnlace, PerfilCuidador } from '../lib/tipos'
 
 type Pestana = 'aprobado' | 'pendiente' | 'rechazado' | 'puertas'
@@ -296,6 +298,9 @@ export default function Cuidadores() {
       return new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()
     })
 
+  // 6 tarjetas por página; vuelve a la primera al cambiar pestaña, búsqueda o filtros.
+  const pag = usePaginacion(visibles, 6, `${pestana}|${busqueda}|${JSON.stringify(filtros)}`)
+
   return (
     <>
       <div className="page-head">
@@ -380,7 +385,7 @@ export default function Cuidadores() {
         </p>
       ) : (
         <div className="card-grid">
-          {visibles.map((c) => {
+          {pag.visibles.map((c) => {
             const usuario = usuarioPorId.get(c.usuario_id)
             const nombre = usuario ? nombreCompleto(usuario) : 'Usuario desconocido'
             const estadoVisual = ESTADOS[c.estado_validacion] ?? { clase: 'neutral', texto: c.estado_validacion }
@@ -521,6 +526,8 @@ export default function Cuidadores() {
           })}
         </div>
       )}
+
+      {cuidadores && visibles.length > 0 && <Paginacion pag={pag} />}
 
       {accionPuertas && (
         <Modal

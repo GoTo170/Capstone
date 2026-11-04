@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import BarraBusqueda from '../components/BarraBusqueda'
+import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFecha, nombreCompleto } from '../lib/formato'
 import type { PerfilCuidador, SolicitudServicio, Valoracion } from '../lib/tipos'
+import { usePaginacion } from '../lib/usePaginacion'
 
 type Pestana = 'pendientes' | 'resueltas' | 'deshabilitadas'
 
@@ -139,6 +141,8 @@ export default function Marketplace() {
     .filter((v) => cumple(v, pestana))
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
 
+  const pag = usePaginacion(visibles, 10, `${pestana}|${busqueda}|${JSON.stringify(filtros)}`)
+
   return (
     <>
       <div className="page-head">
@@ -235,7 +239,7 @@ export default function Marketplace() {
                 </td>
               </tr>
             ) : (
-              visibles.map((v) => {
+              pag.visibles.map((v) => {
                 const { autor, cuidador } = personasDe(v)
 
                 return (
@@ -298,6 +302,8 @@ export default function Marketplace() {
           </tbody>
         </table>
       </div>
+
+      <Paginacion pag={pag} />
     </>
   )
 }

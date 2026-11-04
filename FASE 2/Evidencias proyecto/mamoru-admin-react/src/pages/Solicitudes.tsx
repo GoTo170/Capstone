@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import BarraBusqueda from '../components/BarraBusqueda'
+import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaHora, formatearFechaIso, formatearHora, nombreCompleto } from '../lib/formato'
 import type { PerfilCuidador, SolicitudServicio } from '../lib/tipos'
+import { usePaginacion } from '../lib/usePaginacion'
 
 interface Filtros {
   estado: string
@@ -124,6 +126,8 @@ export default function Solicitudes() {
     .filter((s) => cumple(s, filtros))
     .sort((a, b) => new Date(b.fecha_solicitud).getTime() - new Date(a.fecha_solicitud).getTime())
 
+  const pag = usePaginacion(visibles, 15, `${busqueda}|${JSON.stringify(filtros)}`)
+
   return (
     <>
       <div className="page-head">
@@ -238,7 +242,7 @@ export default function Solicitudes() {
                 </td>
               </tr>
             ) : (
-              visibles.map((s) => {
+              pag.visibles.map((s) => {
                 const solicitante = usuarioPorId.get(s.solicitante_id)
                 const adulto = usuarioPorId.get(s.adulto_mayor_id)
                 const perfil = perfilPorId.get(s.cuidador_id)
@@ -269,6 +273,8 @@ export default function Solicitudes() {
           </tbody>
         </table>
       </div>
+
+      <Paginacion pag={pag} />
     </>
   )
 }

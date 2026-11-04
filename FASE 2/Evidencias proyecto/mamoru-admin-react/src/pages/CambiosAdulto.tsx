@@ -2,9 +2,11 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import BarraBusqueda from '../components/BarraBusqueda'
 import Modal from '../components/Modal'
+import Paginacion from '../components/Paginacion'
 import { apiFetch } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaCompleta } from '../lib/formato'
+import { usePaginacion } from '../lib/usePaginacion'
 import type { CambioAdulto, ContextoLayout } from '../lib/tipos'
 
 type Pestana = 'pendiente' | 'aprobada' | 'rechazada'
@@ -205,6 +207,8 @@ export default function CambiosAdulto() {
       return pestana === 'pendiente' ? fa - fb : fb - fa
     })
 
+  const pag = usePaginacion(visibles, 8, `${pestana}|${busqueda}`)
+
   return (
     <>
       <div className="page-head">
@@ -245,7 +249,7 @@ export default function CambiosAdulto() {
         <p>{busqueda ? 'Ninguna solicitud coincide con la búsqueda.' : 'No hay solicitudes en esta categoría.'}</p>
       ) : (
         <div className="card-grid">
-          {visibles.map((c) => {
+          {pag.visibles.map((c) => {
             const estado = ESTADOS[c.estado] ?? { clase: 'neutral', texto: c.estado }
             return (
               <div className="cg-card" key={c.id} style={{ gridColumn: '1 / -1' }}>
@@ -298,6 +302,8 @@ export default function CambiosAdulto() {
           })}
         </div>
       )}
+
+      {cambios && visibles.length > 0 && <Paginacion pag={pag} />}
 
       {accion && (
         <Modal

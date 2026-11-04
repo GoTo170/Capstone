@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import BarraBusqueda from '../components/BarraBusqueda'
+import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaCompleta, nombreCompleto } from '../lib/formato'
 import type { RegistroAuditoria } from '../lib/tipos'
+import { usePaginacion } from '../lib/usePaginacion'
 
 interface Filtros {
   admin: string
@@ -78,6 +80,8 @@ export default function Auditoria() {
       return true
     })
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+
+  const pag = usePaginacion(registros, 20, `${busqueda}|${JSON.stringify(filtros)}`)
 
   return (
     <>
@@ -171,7 +175,7 @@ export default function Auditoria() {
                 </td>
               </tr>
             ) : (
-              registros.map((r) => {
+              pag.visibles.map((r) => {
                 const admin = usuarioPorId.get(r.administrador_id)
 
                 return (
@@ -190,6 +194,8 @@ export default function Auditoria() {
           </tbody>
         </table>
       </div>
+
+      <Paginacion pag={pag} />
     </>
   )
 }

@@ -2,29 +2,31 @@ import { useEffect, useState } from 'react'
 import BarraBusqueda from '../components/BarraBusqueda'
 import MenuAcciones, { type OpcionMenu } from '../components/MenuAcciones'
 import Modal from '../components/Modal'
+import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch, obtenerUsuarioSesion, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFecha, formatearFechaCompleta, nombreCompleto } from '../lib/formato'
-
+import { usePaginacion } from '../lib/usePaginacion'
+ 
 interface Filtros {
   rol: string
   estado: string
   desde: string
   hasta: string
 }
-
+ 
 type Accion = { tipo: 'detalle' | 'deshabilitar' | 'habilitar'; usuario: Usuario }
-
+ 
 const SIN_FILTROS: Filtros = { rol: '', estado: '', desde: '', hasta: '' }
-
+ 
 const ETIQUETA_ROL: Record<string, string> = {
   adulto_mayor: 'Adulto mayor',
   familiar: 'Familiar',
   cuidador: 'Cuidador',
   administrador: 'Administrador',
 }
-
+ 
 const CHIPS = [
   { valor: '', texto: 'Todos' },
   { valor: 'adulto_mayor', texto: 'Adulto mayor' },
@@ -32,20 +34,20 @@ const CHIPS = [
   { valor: 'cuidador', texto: 'Cuidador' },
   { valor: 'administrador', texto: 'Administrador' },
 ]
-
+ 
 function cumple(usuario: Usuario, busqueda: string, f: Filtros): boolean {
   if (f.rol && usuario.rol !== f.rol) return false
   if (f.estado === 'activo' && !usuario.activo) return false
   if (f.estado === 'suspendido' && usuario.activo) return false
-
+ 
   const dia = usuario.fecha_creacion.slice(0, 10)
   if (f.desde && dia < f.desde) return false
   if (f.hasta && dia > f.hasta) return false
-
+ 
   if (busqueda && !contiene(`${nombreCompleto(usuario)} ${usuario.email ?? ''}`, busqueda)) return false
   return true
 }
-
+ 
 export default function Usuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[] | null>(null)
   const [error, setError] = useState('')
@@ -54,12 +56,12 @@ export default function Usuarios() {
   const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS)
   const [accion, setAccion] = useState<Accion | null>(null)
   const [procesando, setProcesando] = useState(false)
-
+ 
   const miId = obtenerUsuarioSesion()?.id
-
+ 
   useEffect(() => {
     let activo = true
-
+ 
     apiFetch<Usuario[]>('/usuarios')
       .then((lista) => {
         if (activo) setUsuarios(lista)
@@ -67,17 +69,17 @@ export default function Usuarios() {
       .catch((e: unknown) => {
         if (activo) setError(e instanceof Error ? e.message : 'Error al cargar usuarios')
       })
-
+ 
     return () => {
       activo = false
     }
   }, [])
-
+ 
   function mostrarAviso(texto: string) {
     setAviso(texto)
     setTimeout(() => setAviso(''), 2500)
   }
-
+ 
   async function copiarCorreo(correo: string) {
     try {
       await navigator.clipboard.writeText(correo)
@@ -86,7 +88,7 @@ export default function Usuarios() {
       mostrarAviso('No se pudo copiar el correo')
     }
   }
-
+ 
   async function confirmarEstado(usuario: Usuario, activo: boolean) {
     setProcesando(true)
     setError('')
@@ -103,17 +105,17 @@ export default function Usuarios() {
       setAccion(null)
     }
   }
-
+ 
   function opcionesDe(usuario: Usuario): OpcionMenu[] {
     const opciones: OpcionMenu[] = [
       { texto: 'Ver detalles', onClick: () => setAccion({ tipo: 'detalle', usuario }) },
     ]
-
+ 
     if (usuario.email) {
       const correo = usuario.email
       opciones.push({ texto: 'Copiar correo', onClick: () => copiarCorreo(correo) })
     }
-
+ 
     if (usuario.activo) {
       const esMia = usuario.id === miId
       opciones.push({
@@ -125,18 +127,19 @@ export default function Usuarios() {
     } else {
       opciones.push({ texto: 'Habilitar cuenta', onClick: () => setAccion({ tipo: 'habilitar', usuario }) })
     }
-
+ 
     return opciones
   }
-
+ 
   const cambiar = (parcial: Partial<Filtros>) => setFiltros((prev) => ({ ...prev, ...parcial }))
   const filtrosActivos = Object.values(filtros).filter(Boolean).length
-
+ 
   const lista = usuarios ?? []
   const visibles = lista
     .filter((u) => cumple(u, busqueda, filtros))
     .sort((a, b) => new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime())
-
+  const pag = usePaginacion(visibles, 15, `${busqueda}|${JSON.stringify(filtros)}`)
+ 
   return (
     <>
       <div className="page-head">
@@ -144,14 +147,14 @@ export default function Usuarios() {
         <h1 className="page-title">Usuarios</h1>
         <p className="page-desc">Búsqueda y gestión de cuentas de adultos mayores, familiares y cuidadores.</p>
       </div>
-
+ 
       {error && (
         <div className="auth-error" style={{ display: 'block' }}>
           {error}
         </div>
       )}
       {aviso && <div className="aviso-ok">{aviso}</div>}
-
+ 
       <div className="toolbar">
         <div className="filters">
           {CHIPS.map((chip) => (
@@ -166,10 +169,10 @@ export default function Usuarios() {
             </button>
           ))}
         </div>
-
+ 
         <div className="toolbar-tools">
           <BarraBusqueda valor={busqueda} onCambio={setBusqueda} placeholder="Buscar por nombre o correo…" />
-
+ 
           <PanelFiltros activos={filtrosActivos} onLimpiar={() => setFiltros(SIN_FILTROS)}>
             <div className="filtro-campo">
               <label>Rol</label>
@@ -182,7 +185,7 @@ export default function Usuarios() {
                 ))}
               </select>
             </div>
-
+ 
             <div className="filtro-campo">
               <label>Estado</label>
               <select value={filtros.estado} onChange={(e) => cambiar({ estado: e.target.value })}>
@@ -191,7 +194,7 @@ export default function Usuarios() {
                 <option value="suspendido">Suspendido</option>
               </select>
             </div>
-
+ 
             <div className="filtro-campo">
               <label>Fecha de registro</label>
               <div className="filtro-rango">
@@ -218,7 +221,7 @@ export default function Usuarios() {
           </PanelFiltros>
         </div>
       </div>
-
+ 
       <div className="panel">
         <table>
           <thead>
@@ -244,7 +247,7 @@ export default function Usuarios() {
                 </td>
               </tr>
             ) : (
-              visibles.map((u) => (
+              pag.visibles.map((u) => (
                 <tr key={u.id}>
                   <td>
                     <div className="cell-primary">{nombreCompleto(u)}</div>
@@ -266,7 +269,9 @@ export default function Usuarios() {
           </tbody>
         </table>
       </div>
-
+ 
+      <Paginacion pag={pag} />
+ 
       {accion?.tipo === 'detalle' && (
         <Modal
           titulo="Detalles del usuario"
@@ -293,7 +298,7 @@ export default function Usuarios() {
           </dl>
         </Modal>
       )}
-
+ 
       {accion && accion.tipo !== 'detalle' && (
         <Modal
           titulo={accion.tipo === 'deshabilitar' ? 'Deshabilitar cuenta' : 'Habilitar cuenta'}

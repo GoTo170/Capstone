@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import BarraBusqueda from '../components/BarraBusqueda'
 import Modal from '../components/Modal'
+import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { diaLocal, formatearFechaCompleta } from '../lib/formato'
 import type { AlertaSOSPanel, ContextoLayout } from '../lib/tipos'
+import { usePaginacion } from '../lib/usePaginacion'
 
 type Estado = 'activa' | 'atendida' | 'cancelada'
 
@@ -107,6 +109,8 @@ export default function AlertasSOS() {
     .filter((a) => cumple(a, estado, busqueda, filtros))
     .sort((a, b) => new Date(b.fecha_alerta).getTime() - new Date(a.fecha_alerta).getTime())
 
+  const pag = usePaginacion(visibles, 10, `${estado}|${busqueda}|${JSON.stringify(filtros)}`)
+
   return (
     <>
       <div className="page-head">
@@ -198,7 +202,7 @@ export default function AlertasSOS() {
                 </td>
               </tr>
             ) : (
-              visibles.map((a) => {
+              pag.visibles.map((a) => {
                 const etiqueta = ESTADOS[a.estado] ?? { clase: 'neutral', texto: a.estado }
 
                 return (
@@ -249,6 +253,8 @@ export default function AlertasSOS() {
           </tbody>
         </table>
       </div>
+
+      <Paginacion pag={pag} />
 
       {accion && (
         <Modal
