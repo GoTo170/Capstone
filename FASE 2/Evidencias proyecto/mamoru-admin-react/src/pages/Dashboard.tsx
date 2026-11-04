@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiFetch, obtenerUsuarioSesion, type Usuario } from '../lib/api'
+import { apiFetch, obtenerUsuarioSesion, tienePermiso, type Usuario } from '../lib/api'
 import { formatearFechaHora } from '../lib/formato'
 import type { AlertaSOS, PerfilCuidador, RegistroAuditoria, SolicitudServicio } from '../lib/tipos'
 
@@ -33,6 +33,9 @@ function claseEstado(estado: string): string {
 export default function Dashboard() {
   const usuarioSesion = obtenerUsuarioSesion()
   const primerNombre = usuarioSesion?.nombre.split(' ')[0] ?? 'Administrador'
+  // La auditoría es solo del superadmin; los enlaces a Solicitudes y Alertas SOS, de soporte.
+  const puedeAuditoria = tienePermiso(usuarioSesion, 'auditoria')
+  const puedeSoporte = tienePermiso(usuarioSesion, 'soporte')
 
   const [datos, setDatos] = useState<DatosDashboard | null>(null)
   const [error, setError] = useState('')
@@ -45,7 +48,7 @@ export default function Dashboard() {
       apiFetch<PerfilCuidador[]>('/cuidadores'),
       apiFetch<SolicitudServicio[]>('/solicitudes'),
       apiFetch<AlertaSOS[]>('/alertas-sos'),
-      apiFetch<RegistroAuditoria[]>('/auditoria'),
+      puedeAuditoria ? apiFetch<RegistroAuditoria[]>('/auditoria') : Promise.resolve([] as RegistroAuditoria[]),
     ])
       .then(([usuarios, cuidadores, solicitudes, alertas, auditoria]) => {
         if (activo) setDatos({ usuarios, cuidadores, solicitudes, alertas, auditoria })
@@ -57,7 +60,7 @@ export default function Dashboard() {
     return () => {
       activo = false
     }
-  }, [])
+  }, [puedeAuditoria])
 
   const { usuarios, cuidadores, solicitudes, alertas, auditoria } = datos ?? VACIO
   const valor = (n: number) => (datos ? n : '—')
@@ -109,22 +112,41 @@ export default function Dashboard() {
           <div className="kpi-value">{valor(solicitudes.length)}</div>
           <div className="kpi-delta warn">{datos ? `${pendientesSolicitudes} pendientes` : ''}</div>
         </div>
-        <Link to="/alertas-sos" className="kpi-card sos" style={{ textDecoration: 'none', color: 'inherit', display: 'block', cursor: 'pointer' }}>
-          <div className="kpi-label">Alertas SOS activas</div>
-          <div className="kpi-value">{valor(alertasActivas)}</div>
-          <div className="kpi-delta crit">
-            {datos ? (alertasActivas > 0 ? 'Requieren revisión · Ver alertas' : 'Sin alertas activas') : ''}
-          </div>
-        </Link>
+        {(() => {
+          const contenido = (
+            <>
+              <div className="kpi-label">Alertas SOS activas</div>
+              <div className="kpi-value">{valor(alertasActivas)}</div>
+              <div className="kpi-delta crit">
+                {datos
+                  ? alertasActivas > 0
+                    ? puedeSoporte
+                      ? 'Requieren revisión · Ver alertas'
+                      : 'Requieren revisión'
+                    : 'Sin alertas activas'
+                  : ''}
+              </div>
+            </>
+          )
+          return puedeSoporte ? (
+            <Link to="/alertas-sos" className="kpi-card sos" style={{ textDecoration: 'none', color: 'inherit', display: 'block', cursor: 'pointer' }}>
+              {contenido}
+            </Link>
+          ) : (
+            <div className="kpi-card sos">{contenido}</div>
+          )
+        })()}
       </div>
 
-      <div className="two-col">
+      <div className="two-col" style={puedeAuditoria ? undefined : { gridTemplateColumns: '1fr' }}>
         <div className="panel">
           <div className="panel-head verde">
             <h2>Solicitudes recientes</h2>
-            <Link className="link-btn" to="/solicitudes">
-              Ver todas
-            </Link>
+            {puedeSoporte && (
+              <Link className="link-btn" to="/solicitudes">
+                Ver todas
+              </Link>
+            )}
           </div>
           <table>
             <thead>
@@ -166,6 +188,7 @@ export default function Dashboard() {
           </table>
         </div>
 
+        {puedeAuditoria && (
         <div className="panel">
           <div className="panel-head lila">
             <h2>Auditoría reciente</h2>
@@ -197,6 +220,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        )}
       </div>
 
       <div className="panel">
