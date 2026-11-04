@@ -1,11 +1,14 @@
-import 'dart:convert';
- 
-import 'package:http/http.dart' as http;
- 
 import '../../../core/api_client.dart';
-import '../../../core/api_config.dart';
-import '../../../core/sesion.dart';
 import '../models/perfil_adulto_mayor_vinculado.dart';
+ 
+/// Ya no se usa aquí (los contactos ahora se proponen con ApiException); se deja por si otra pantalla la nombra.
+class ErrorContactos implements Exception {
+  final String mensaje;
+  const ErrorContactos(this.mensaje);
+ 
+  @override
+  String toString() => mensaje;
+}
  
 /// Resultado de crear o regenerar una invitación.
 class InvitacionCreada {
@@ -33,15 +36,6 @@ class AdultoVinculado {
     required this.accesoActivado,
     this.fotoUrl,
   });
-}
- 
-/// Error al guardar los contactos de emergencia (mensaje listo para mostrar).
-class ErrorContactos implements Exception {
-  final String mensaje;
-  const ErrorContactos(this.mensaje);
- 
-  @override
-  String toString() => mensaje;
 }
  
 /// Operaciones del familiar contra el backend.
@@ -105,12 +99,18 @@ class FamiliarService {
     return _perfilDesdeJson(d);
   }
  
-  /// Igual que detalleAdultoMayor, pero también devuelve la URL de su foto.
-  static Future<({PerfilAdultoMayorVinculado perfil, String? fotoUrl})> detalleConFoto(String id) async {
+  /// Igual que detalleAdultoMayor, pero también devuelve la URL de su foto y los
+  /// tipos de cambio que esperan aprobación del administrador
+  /// ("salud", "alergias", "contactos").
+  static Future<({PerfilAdultoMayorVinculado perfil, String? fotoUrl, Set<String> cambiosPendientes})> detalleConFoto(String id) async {
     final d = await ApiClient.get('/adultos-mayores/$id') as Map<String, dynamic>;
-    return (perfil: _perfilDesdeJson(d), fotoUrl: d['foto_url'] as String?);
+    final pendientes = ((d['cambios_pendientes'] as List<dynamic>?) ?? const []).map((e) => e.toString()).toSet();
+    final perfil = _perfilDesdeJson(d);
+    perfil.saludPendienteAprobacion = pendientes.contains('salud');
+    perfil.alergiasPendienteAprobacion = pendientes.contains('alergias');
+    return (perfil: perfil, fotoUrl: d['foto_url'] as String?, cambiosPendientes: pendientes);
   }
- 
+
   static PerfilAdultoMayorVinculado _perfilDesdeJson(Map<String, dynamic> d) {
  
     final fechaTexto = d['fecha_nacimiento'] as String?;
@@ -145,62 +145,49 @@ class FamiliarService {
     );
   }
  
-  /// Reemplaza los contactos de emergencia del adulto mayor (1 a 3).
-  /// Los cambios se guardan de inmediato, sin aprobación del administrador.
-  static Future<List<ContactoEmergenciaInfo>> actualizarContactos(
-    String adultoMayorId,
-    List<ContactoEmergenciaInfo> contactos,
-  ) async {
-    final http.Response respuesta;
-    try {
-      respuesta = await http
-          .put(
-            Uri.parse('${ApiConfig.baseUrl}/adultos-mayores/$adultoMayorId/contactos'),
-            headers: {
-              'Content-Type': 'application/json',
-              if (Sesion.token != null) 'Authorization': 'Bearer ${Sesion.token}',
-            },
-            body: jsonEncode({
-              'contactos': [
-                for (int i = 0; i < contactos.length; i++)
-                  {
-                    'nombre': contactos[i].nombre,
-                    'telefono': contactos[i].telefono,
-                    'parentesco': contactos[i].relacion,
-                    'orden': i + 1,
-                  },
-              ],
-            }),
-          )
-          .timeout(const Duration(seconds: 60));
-    } catch (_) {
-      throw const ErrorContactos('No se pudo conectar con el servidor. Revisa tu conexión.');
-    }
- 
-    dynamic cuerpo;
-    try {
-      cuerpo = jsonDecode(utf8.decode(respuesta.bodyBytes));
-    } catch (_) {
-      cuerpo = null;
-    }
- 
-    if (respuesta.statusCode < 200 || respuesta.statusCode >= 300) {
-      final detalle = cuerpo is Map ? cuerpo['detail'] : null;
-      throw ErrorContactos(
-        detalle is String ? detalle : 'No se pudieron guardar los contactos (error ${respuesta.statusCode}).',
-      );
-    }
- 
-    return (cuerpo as List<dynamic>).map((item) {
-      final c = item as Map<String, dynamic>;
-      return ContactoEmergenciaInfo(
-        nombre: c['nombre'] as String,
-        telefono: c['telefono'] as String,
-        relacion: (c['parentesco'] as String?) ?? '',
-      );
-    }).toList();
+  // ------------------------------------------------ cambios con aprobación
+  // Ninguno modifica el perfil: el cambio queda pendiente hasta que el
+  // administrador lo apruebe en el panel. Si algo falla lanzan ApiException.
+
+  /// Propone nuevas condiciones médicas (un ítem por línea).
+  static Future<void> proponerCambioSalud(String adultoMayorId, List<String> condiciones) async {
+    await ApiClient.post('/adultos-mayores/$adultoMayorId/cambios', {
+      'tipo': 'salud',
+      'enfermedades': condiciones.join('\n'),
+    });
   }
- 
+
+  /// Propone nuevas alergias e intolerancias (un ítem por línea).
+  static Future<void> proponerCambioAlergias(
+    String adultoMayorId, {
+    required List<String> medicamentos,
+    required List<String> alimentos,
+    required List<String> intolerancias,
+  }) async {
+    await ApiClient.post('/adultos-mayores/$adultoMayorId/cambios', {
+      'tipo': 'alergias',
+      'alergia_medicamentos': medicamentos.join('\n'),
+      'alergia_alimentos': alimentos.join('\n'),
+      'intolerancia_alimentaria': intolerancias.join('\n'),
+    });
+  }
+
+  /// Propone nuevos contactos de emergencia (1 a 3).
+  static Future<void> proponerCambioContactos(String adultoMayorId, List<ContactoEmergenciaInfo> contactos) async {
+    await ApiClient.post('/adultos-mayores/$adultoMayorId/cambios', {
+      'tipo': 'contactos',
+      'contactos': [
+        for (int i = 0; i < contactos.length; i++)
+          {
+            'nombre': contactos[i].nombre,
+            'telefono': contactos[i].telefono,
+            'parentesco': contactos[i].relacion,
+            'orden': i + 1,
+          },
+      ],
+    });
+  }
+
   /// Genera un código nuevo para un adulto mayor que ya existe.
   /// El código anterior deja de servir.
   static Future<InvitacionCreada> reinvitar(

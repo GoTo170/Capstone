@@ -3,6 +3,7 @@ import time as reloj
 import random
 import uuid
 import string
+import json
 from datetime import date, datetime, timedelta, time, timezone
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -709,6 +710,7 @@ def detalle_adulto_mayor(
         alergia_alimentos=perfil.alergia_alimentos if perfil else None,
         intolerancia_alimentaria=perfil.intolerancia_alimentaria if perfil else None,
         contactos=contactos,
+        cambios_pendientes=_tipos_cambio_pendientes(db, usuario.id),
     )
 
 
@@ -2871,25 +2873,66 @@ def quitar_foto_del_adulto_mayor(
  
     return {"foto_url": None}
 
-
-@app.put("/adultos-mayores/{adulto_mayor_id}/contactos", response_model=list[schemas.ContactoEmergenciaOut])
-def actualizar_contactos_emergencia(
-    adulto_mayor_id: str,
-    datos: schemas.ContactosEmergenciaActualizar,
-    db: Session = Depends(get_db),
-    familiar_actual: models.Usuario = Depends(requerir_rol("familiar")),
-):
-    if not familiar_tiene_vinculacion(db, familiar_actual.id, adulto_mayor_id):
-        raise HTTPException(status_code=403, detail="No tienes una vinculación activa con ese adulto mayor")
+# ============================================================
+# Cambios en los datos del adulto mayor: los aprueba el administrador
+# ============================================================
+# El familiar PROPONE el cambio; el perfil sigue mostrando los datos antiguos
+# hasta que el administrador lo aprueba en el panel.
+#   tipo "salud"     -> enfermedades
+#   tipo "alergias"  -> alergia a medicamentos, a alimentos e intolerancias
+#   tipo "contactos" -> contactos de emergencia (1 a 3)
+# Si el familiar vuelve a enviar el mismo tipo mientras hay uno pendiente,
+# la solicitud pendiente se reemplaza (no se acumulan).
  
-    if len(datos.contactos) < 1:
+TIPOS_CAMBIO_ADULTO = ("salud", "alergias", "contactos")
+CAMPOS_CAMBIO_TEXTO = {
+    "salud": ("enfermedades",),
+    "alergias": ("alergia_medicamentos", "alergia_alimentos", "intolerancia_alimentaria"),
+}
+MAX_TEXTO_SALUD = 2000
+ETIQUETA_CAMBIO = {
+    "salud": "información de salud",
+    "alergias": "alergias e intolerancias",
+    "contactos": "contactos de emergencia",
+}
+ 
+ 
+def _uuid_o_404(valor, mensaje="No encontrado"):
+    try:
+        return uuid.UUID(str(valor))
+    except ValueError:
+        raise HTTPException(status_code=404, detail=mensaje)
+ 
+ 
+def _texto_o_none(valor):
+    texto = (valor or "").strip()
+    return texto or None
+ 
+ 
+def _contactos_a_lista(contactos) -> list:
+    return [
+        {
+            "nombre": c.nombre,
+            "telefono": c.telefono,
+            "parentesco": c.parentesco,
+            "orden": c.orden,
+        }
+        for c in sorted(contactos, key=lambda x: x.orden)
+    ]
+ 
+ 
+def _validar_contactos(contactos) -> list:
+    """Mismas reglas que tenía la edición directa. Devuelve la lista limpia."""
+    if len(contactos) < 1:
         raise HTTPException(status_code=400, detail="Debes dejar al menos un contacto de emergencia")
-    if len(datos.contactos) > 3:
+    if len(contactos) > 3:
         raise HTTPException(status_code=400, detail="Máximo 3 contactos de emergencia")
  
-    for c in datos.contactos:
+    limpios = []
+    for i, c in enumerate(contactos):
         nombre = c.nombre.strip()
         telefono = c.telefono.strip()
+        parentesco = (c.parentesco or "").strip() or None
         if not nombre:
             raise HTTPException(status_code=400, detail="Cada contacto debe tener un nombre")
         if len(nombre) > 150:
@@ -2898,26 +2941,211 @@ def actualizar_contactos_emergencia(
             raise HTTPException(status_code=400, detail="El teléfono de un contacto es demasiado largo (máximo 20 caracteres)")
         if sum(ch.isdigit() for ch in telefono) < 8:
             raise HTTPException(status_code=400, detail="El teléfono de un contacto no es válido")
-        if c.parentesco and len(c.parentesco) > 50:
+        if parentesco and len(parentesco) > 50:
             raise HTTPException(status_code=400, detail="La relación de un contacto es demasiado larga (máximo 50 caracteres)")
+        limpios.append({"nombre": nombre, "telefono": telefono, "parentesco": parentesco, "orden": i + 1})
+    return limpios
  
-    db.query(models.ContactoEmergencia).filter(
-        models.ContactoEmergencia.adulto_mayor_id == adulto_mayor_id
-    ).delete(synchronize_session=False)
  
-    nuevos = []
-    for i, c in enumerate(datos.contactos):
-        nuevo = models.ContactoEmergencia(
-            adulto_mayor_id=adulto_mayor_id,
-            nombre=c.nombre.strip(),
-            telefono=c.telefono.strip(),
-            parentesco=(c.parentesco or "").strip() or None,
-            orden=i + 1,
-        )
-        db.add(nuevo)
-        nuevos.append(nuevo)
+def _datos_actuales_adulto(db, adulto_mayor_id, tipo) -> dict:
+    """Foto de lo que hay guardado hoy, para mostrar el antes y el después."""
+    if tipo == "contactos":
+        contactos = db.query(models.ContactoEmergencia).filter(
+            models.ContactoEmergencia.adulto_mayor_id == adulto_mayor_id
+        ).order_by(models.ContactoEmergencia.orden).all()
+        return {"contactos": _contactos_a_lista(contactos)}
  
+    perfil = db.query(models.PerfilAdultoMayor).filter(
+        models.PerfilAdultoMayor.usuario_id == adulto_mayor_id
+    ).first()
+    return {campo: _texto_o_none(getattr(perfil, campo, None)) if perfil else None
+            for campo in CAMPOS_CAMBIO_TEXTO[tipo]}
+ 
+ 
+def _tipos_cambio_pendientes(db, adulto_mayor_id) -> list:
+    filas = db.query(models.SolicitudCambioAdulto.tipo).filter(
+        models.SolicitudCambioAdulto.adulto_mayor_id == adulto_mayor_id,
+        models.SolicitudCambioAdulto.estado == "pendiente",
+    ).all()
+    return sorted({f[0] for f in filas})
+ 
+ 
+@app.post("/adultos-mayores/{adulto_mayor_id}/cambios", response_model=schemas.CambioAdultoOut)
+def proponer_cambio_adulto_mayor(
+    adulto_mayor_id: str,
+    datos: schemas.CambioAdultoCrear,
+    db: Session = Depends(get_db),
+    familiar_actual: models.Usuario = Depends(requerir_rol("familiar")),
+):
+    adulto = _adulto_del_familiar(db, familiar_actual.id, adulto_mayor_id)
+ 
+    if datos.tipo not in TIPOS_CAMBIO_ADULTO:
+        raise HTTPException(status_code=400, detail="Tipo de cambio no válido")
+ 
+    # Datos nuevos, ya validados y limpios.
+    if datos.tipo == "contactos":
+        if datos.contactos is None:
+            raise HTTPException(status_code=400, detail="Faltan los contactos de emergencia")
+        nuevos = {"contactos": _validar_contactos(datos.contactos)}
+    else:
+        nuevos = {}
+        for campo in CAMPOS_CAMBIO_TEXTO[datos.tipo]:
+            texto = _texto_o_none(getattr(datos, campo))
+            if texto and len(texto) > MAX_TEXTO_SALUD:
+                raise HTTPException(status_code=400, detail=f"El texto es demasiado largo (máximo {MAX_TEXTO_SALUD} caracteres)")
+            nuevos[campo] = texto
+ 
+    anteriores = _datos_actuales_adulto(db, adulto.id, datos.tipo)
+    if nuevos == anteriores:
+        raise HTTPException(status_code=400, detail="No hay cambios respecto a lo que ya está guardado")
+ 
+    # Un solo cambio pendiente por tipo: si ya había uno, se reemplaza.
+    solicitud = db.query(models.SolicitudCambioAdulto).filter(
+        models.SolicitudCambioAdulto.adulto_mayor_id == adulto.id,
+        models.SolicitudCambioAdulto.tipo == datos.tipo,
+        models.SolicitudCambioAdulto.estado == "pendiente",
+    ).first()
+    era_nueva = solicitud is None
+    if era_nueva:
+        solicitud = models.SolicitudCambioAdulto(adulto_mayor_id=adulto.id, tipo=datos.tipo, estado="pendiente")
+        db.add(solicitud)
+ 
+    solicitud.solicitante_id = familiar_actual.id
+    solicitud.datos_anteriores = json.dumps(anteriores, ensure_ascii=False)
+    solicitud.datos_nuevos = json.dumps(nuevos, ensure_ascii=False)
+    solicitud.fecha_solicitud = datetime.now()
     db.commit()
-    for n in nuevos:
-        db.refresh(n)
-    return nuevos
+    db.refresh(solicitud)
+ 
+    if era_nueva:
+        notificar_administradores(
+            db,
+            "cambio_datos_solicitado",
+            f"{familiar_actual.nombre} propuso cambiar {ETIQUETA_CAMBIO[datos.tipo]} de {adulto.nombre}",
+        )
+    return solicitud
+ 
+ 
+@app.get("/admin/cambios-adulto-mayor", response_model=list[schemas.CambioAdultoPanelOut])
+def listar_cambios_adulto_mayor(
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    solicitudes = db.query(models.SolicitudCambioAdulto).order_by(
+        models.SolicitudCambioAdulto.fecha_solicitud.desc()
+    ).all()
+ 
+    ids = {s.adulto_mayor_id for s in solicitudes} | {s.solicitante_id for s in solicitudes if s.solicitante_id}
+    usuarios = {
+        u.id: u
+        for u in db.query(models.Usuario).filter(models.Usuario.id.in_(ids)).all()
+    } if ids else {}
+ 
+    def nombre_de(usuario_id):
+        u = usuarios.get(usuario_id)
+        return f"{u.nombre} {u.apellido or ''}".strip() if u else "Usuario desconocido"
+ 
+    resultado = []
+    for s in solicitudes:
+        resultado.append(schemas.CambioAdultoPanelOut(
+            id=s.id,
+            adulto_mayor_id=s.adulto_mayor_id,
+            adulto_mayor_nombre=nombre_de(s.adulto_mayor_id),
+            solicitante_nombre=nombre_de(s.solicitante_id),
+            tipo=s.tipo,
+            estado=s.estado,
+            anteriores=json.loads(s.datos_anteriores or "{}"),
+            nuevos=json.loads(s.datos_nuevos or "{}"),
+            motivo_rechazo=s.motivo_rechazo,
+            fecha_solicitud=s.fecha_solicitud,
+            fecha_resolucion=s.fecha_resolucion,
+        ))
+    return resultado
+ 
+ 
+@app.patch("/admin/cambios-adulto-mayor/{cambio_id}", response_model=schemas.CambioAdultoPanelOut)
+def resolver_cambio_adulto_mayor(
+    cambio_id: str,
+    datos: schemas.CambioAdultoDecision,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    solicitud = db.query(models.SolicitudCambioAdulto).filter(
+        models.SolicitudCambioAdulto.id == _uuid_o_404(cambio_id, "Solicitud no encontrada")
+    ).first()
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if solicitud.estado != "pendiente":
+        raise HTTPException(status_code=400, detail="Esta solicitud ya fue resuelta")
+ 
+    motivo = (datos.motivo or "").strip()
+    if len(motivo) > 300:
+        raise HTTPException(status_code=400, detail="El motivo es demasiado largo (máximo 300 caracteres)")
+ 
+    adulto = db.query(models.Usuario).filter(models.Usuario.id == solicitud.adulto_mayor_id).first()
+    nombre_adulto = f"{adulto.nombre} {adulto.apellido or ''}".strip() if adulto else "adulto mayor"
+    etiqueta = ETIQUETA_CAMBIO.get(solicitud.tipo, "datos")
+    nuevos = json.loads(solicitud.datos_nuevos or "{}")
+ 
+    if datos.aprobar:
+        if solicitud.tipo == "contactos":
+            db.query(models.ContactoEmergencia).filter(
+                models.ContactoEmergencia.adulto_mayor_id == solicitud.adulto_mayor_id
+            ).delete(synchronize_session=False)
+            for c in nuevos.get("contactos", []):
+                db.add(models.ContactoEmergencia(
+                    adulto_mayor_id=solicitud.adulto_mayor_id,
+                    nombre=c["nombre"],
+                    telefono=c["telefono"],
+                    parentesco=c.get("parentesco"),
+                    orden=c["orden"],
+                ))
+        else:
+            perfil = db.query(models.PerfilAdultoMayor).filter(
+                models.PerfilAdultoMayor.usuario_id == solicitud.adulto_mayor_id
+            ).first()
+            if not perfil:
+                perfil = models.PerfilAdultoMayor(usuario_id=solicitud.adulto_mayor_id)
+                db.add(perfil)
+            for campo in CAMPOS_CAMBIO_TEXTO[solicitud.tipo]:
+                setattr(perfil, campo, nuevos.get(campo))
+        solicitud.estado = "aprobada"
+        mensaje = f"Se aprobó el cambio de {etiqueta} de {nombre_adulto}"
+    else:
+        solicitud.estado = "rechazada"
+        solicitud.motivo_rechazo = motivo or None
+        mensaje = f"Se rechazó el cambio de {etiqueta} de {nombre_adulto}"
+        if motivo:
+            mensaje += f": {motivo}"
+ 
+    solicitud.fecha_resolucion = datetime.now()
+    solicitud.resuelto_por_id = admin_actual.id
+    if solicitud.solicitante_id:
+        db.add(models.Notificacion(
+            usuario_id=solicitud.solicitante_id,
+            tipo="cambio_datos_aprobado" if datos.aprobar else "cambio_datos_rechazado",
+            mensaje=mensaje,
+        ))
+    db.commit()
+    db.refresh(solicitud)
+ 
+    accion = "Aprobó cambio de datos del adulto mayor" if datos.aprobar else "Rechazó cambio de datos del adulto mayor"
+    registrar_auditoria(
+        db, admin_actual.id, accion, "adulto_mayor", solicitud.adulto_mayor_id,
+        f"{etiqueta} · {nombre_adulto}",
+    )
+ 
+    solicitante = db.query(models.Usuario).filter(models.Usuario.id == solicitud.solicitante_id).first()
+    return schemas.CambioAdultoPanelOut(
+        id=solicitud.id,
+        adulto_mayor_id=solicitud.adulto_mayor_id,
+        adulto_mayor_nombre=nombre_adulto,
+        solicitante_nombre=f"{solicitante.nombre} {solicitante.apellido or ''}".strip() if solicitante else "Usuario desconocido",
+        tipo=solicitud.tipo,
+        estado=solicitud.estado,
+        anteriores=json.loads(solicitud.datos_anteriores or "{}"),
+        nuevos=nuevos,
+        motivo_rechazo=solicitud.motivo_rechazo,
+        fecha_solicitud=solicitud.fecha_solicitud,
+        fecha_resolucion=solicitud.fecha_resolucion,
+    )

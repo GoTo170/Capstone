@@ -480,6 +480,8 @@ class AdultoMayorDetalleOut(AdultoMayorResumenOut):
     alergia_alimentos: Optional[str] = None
     intolerancia_alimentaria: Optional[str] = None
     contactos: List[ContactoEmergenciaOut]
+    # Tipos de cambio ("salud", "alergias", "contactos") esperando aprobación del administrador.
+    cambios_pendientes: List[str] = []
 
 
 class TareaRecordatorioLote(BaseModel):
@@ -731,3 +733,38 @@ class PushToken(BaseModel):
 
 class ContactosEmergenciaActualizar(BaseModel):
     contactos: List[ContactoEmergenciaCreate]
+
+class CambioAdultoCrear(BaseModel):
+    tipo: str  # "salud", "alergias" o "contactos"
+    enfermedades: Optional[str] = None
+    alergia_medicamentos: Optional[str] = None
+    alergia_alimentos: Optional[str] = None
+    intolerancia_alimentaria: Optional[str] = None
+    contactos: Optional[List[ContactoEmergenciaCreate]] = None
+
+class CambioAdultoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+ 
+    id: UUID
+    tipo: str
+    estado: str
+    fecha_solicitud: datetime
+ 
+ 
+class CambioAdultoPanelOut(BaseModel):
+    id: UUID
+    adulto_mayor_id: UUID
+    adulto_mayor_nombre: str
+    solicitante_nombre: str
+    tipo: str
+    estado: str
+    anteriores: dict
+    nuevos: dict
+    motivo_rechazo: Optional[str] = None
+    fecha_solicitud: Optional[datetime] = None
+    fecha_resolucion: Optional[datetime] = None
+ 
+ 
+class CambioAdultoDecision(BaseModel):
+    aprobar: bool
+    motivo: Optional[str] = None

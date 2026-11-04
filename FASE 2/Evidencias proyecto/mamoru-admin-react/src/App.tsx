@@ -13,6 +13,7 @@ import Marketplace from './pages/Marketplace'
 import Reportes from './pages/Reportes'
 import Solicitudes from './pages/Solicitudes'
 import Usuarios from './pages/Usuarios'
+import CambiosAdulto from './pages/CambiosAdulto'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/cuidadores" element={<Cuidadores />} />
             <Route path="/marketplace" element={<Marketplace />} />
             <Route path="/solicitudes" element={<Solicitudes />} />
+            <Route path="/cambios-adulto-mayor" element={<CambiosAdulto />} />
             <Route path="/alertas-sos" element={<AlertasSOS />} />
             <Route path="/reportes" element={<Reportes />} />
             <Route path="/auditoria" element={<Auditoria />} />

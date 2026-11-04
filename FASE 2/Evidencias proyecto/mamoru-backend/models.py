@@ -214,4 +214,20 @@ class DispositivoPush(Base):
     token = Column(Text, nullable=False, unique=True)
     plataforma = Column(String(20), default="android")
     fecha_actualizacion = Column(TIMESTAMP, server_default=text("now()"))
+
+
+class SolicitudCambioAdulto(Base):
+    """Cambio propuesto por un familiar a los datos del adulto mayor; lo resuelve el administrador."""
+    __tablename__ = "solicitudes_cambio_adulto"
  
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    adulto_mayor_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    solicitante_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"))
+    tipo = Column(String(20), nullable=False)  # salud, alergias, contactos
+    datos_anteriores = Column(Text)  # JSON
+    datos_nuevos = Column(Text)      # JSON
+    estado = Column(String(20), nullable=False, default="pendiente")
+    motivo_rechazo = Column(Text)
+    fecha_solicitud = Column(TIMESTAMP, server_default=text("now()"))
+    fecha_resolucion = Column(TIMESTAMP)
+    resuelto_por_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"))

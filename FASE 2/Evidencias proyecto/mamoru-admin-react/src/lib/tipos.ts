@@ -102,3 +102,17 @@ export interface DocumentoEnlace {
   tipo: string
   expira_en_segundos: number
 }
+
+export interface CambioAdulto {
+  id: string
+  adulto_mayor_id: string
+  adulto_mayor_nombre: string
+  solicitante_nombre: string
+  tipo: string // 'salud' | 'alergias' | 'contactos'
+  estado: string // 'pendiente' | 'aprobada' | 'rechazada'
+  anteriores: Record<string, unknown>
+  nuevos: Record<string, unknown>
+  motivo_rechazo: string | null
+  fecha_solicitud: string | null
+  fecha_resolucion: string | null
+}

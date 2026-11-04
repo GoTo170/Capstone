@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, cerrarSesion, obtenerUsuarioSesion } from '../lib/api'
-import type { AlertaSOS, ContextoLayout, PerfilCuidador } from '../lib/tipos'
+import type { AlertaSOS, CambioAdulto, ContextoLayout, PerfilCuidador } from '../lib/tipos'
 import { useTheme } from '../lib/useTheme'
 import Notificaciones from './Notificaciones'
 
@@ -17,6 +17,7 @@ const enlaces: Enlace[] = [
   { to: '/cuidadores', texto: 'Cuidadores' },
   { to: '/marketplace', texto: 'Marketplace' },
   { to: '/solicitudes', texto: 'Solicitudes' },
+  { to: '/cambios-adulto-mayor', texto: 'Cambios de datos' },
   { to: '/alertas-sos', texto: 'Alertas SOS' },
   { to: '/reportes', texto: 'Reportes' },
   { to: '/auditoria', texto: 'Auditoría' },
@@ -33,6 +34,7 @@ export default function Layout() {
   const usuario = obtenerUsuarioSesion()
   const [pendientes, setPendientes] = useState(0)
   const [sosActivas, setSosActivas] = useState(0)
+  const [cambiosPendientes, setCambiosPendientes] = useState(0)
 
   const refrescarPendientes = useCallback(() => {
     apiFetch<PerfilCuidador[]>('/cuidadores')
@@ -40,6 +42,9 @@ export default function Layout() {
         // Cuenta perfiles por aprobar y solicitudes de puertas adentro por resolver.
         setPendientes(lista.filter((c) => c.estado_validacion === 'pendiente' || c.puertas_adentro_pendiente).length),
       )
+      .catch(() => {})
+    apiFetch<CambioAdulto[]>('/admin/cambios-adulto-mayor')
+      .then((lista) => setCambiosPendientes(lista.filter((c) => c.estado === 'pendiente').length))
       .catch(() => {})
   }, [])
 
@@ -80,6 +85,7 @@ export default function Layout() {
   function insignia(to: string): number {
     if (to === '/cuidadores') return pendientes
     if (to === '/alertas-sos') return sosActivas
+    if (to === '/cambios-adulto-mayor') return cambiosPendientes
     return 0
   }
 
