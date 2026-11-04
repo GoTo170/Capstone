@@ -185,18 +185,24 @@ export default function Config() {
                     {esMia ? (
                       <span className="pill neutral">{ETIQUETA_ROL_INTERNO[rol] ?? rol} (tú)</span>
                     ) : (
-                      <select
-                        value={rol}
-                        onChange={(e) => setCambioRol({ usuario: u, nuevo: e.target.value })}
-                        aria-label={`Rol interno de ${nombreCompleto(u)}`}
-                      >
-                        {ROLES_INTERNOS.map((r) => (
-                          <option key={r} value={r}>
-                            {ETIQUETA_ROL_INTERNO[r]}
-                          </option>
-                        ))}
-                        {!(ROLES_INTERNOS as readonly string[]).includes(rol) && <option value={rol}>{rol}</option>}
-                      </select>
+                      <span className="select-rol-caja">
+                        <select
+                          className="select-rol"
+                          value={rol}
+                          onChange={(e) => setCambioRol({ usuario: u, nuevo: e.target.value })}
+                          aria-label={`Rol interno de ${nombreCompleto(u)}`}
+                        >
+                          {ROLES_INTERNOS.map((r) => (
+                            <option key={r} value={r}>
+                              {ETIQUETA_ROL_INTERNO[r]}
+                            </option>
+                          ))}
+                          {!(ROLES_INTERNOS as readonly string[]).includes(rol) && <option value={rol}>{rol}</option>}
+                        </select>
+                        <svg className="select-rol-flecha" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                      </span>
                     )}
                   </td>
                   <td>{DESCRIPCION_ROL_INTERNO[rol] ?? 'Sin permisos'}</td>

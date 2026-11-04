@@ -1499,3 +1499,50 @@ body {
   .panel, .kpi-card { box-shadow: none; break-inside: avoid; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Selector de rol del equipo (Configuración): usa las variables del tema, claro y oscuro */
+.select-rol-caja {
+  position: relative;
+  display: inline-block;
+  color: var(--ink);
+}
+
+.select-rol {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 210px;
+  padding: 8px 34px 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.select-rol:hover {
+  border-color: var(--accent, #3fb27f);
+}
+
+.select-rol:focus-visible {
+  outline: none;
+  border-color: var(--accent, #3fb27f);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #3fb27f) 30%, transparent);
+}
+
+.select-rol option {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.select-rol-flecha {
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0.7;
+}
