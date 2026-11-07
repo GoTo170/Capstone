@@ -3,32 +3,73 @@ import { apiFetch } from '../lib/api'
 import { formatearFechaHora } from '../lib/formato'
 import type { Notificacion } from '../lib/tipos'
 
+// Cada cuántos segundos se buscan avisos nuevos mientras el panel está abierto.
+const SEGUNDOS_ACTUALIZACION = 30
+
+async function marcarLeidas() {
+  try {
+    await apiFetch('/notificaciones/marcar-leidas', { method: 'PATCH' })
+  } catch (e) {
+    console.error('No se pudieron marcar como leídas:', e)
+  }
+}
+
 export default function Notificaciones() {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([])
   const [cargadas, setCargadas] = useState(false)
   const [abierto, setAbierto] = useState(false)
   const [punto, setPunto] = useState(false)
   const contenedor = useRef<HTMLDivElement>(null)
+  // Para que la actualización automática sepa si la lista está abierta en ese momento.
+  const abiertoRef = useRef(false)
+
+  useEffect(() => {
+    abiertoRef.current = abierto
+  }, [abierto])
 
   useEffect(() => {
     let activo = true
 
-    apiFetch<Notificacion[]>('/notificaciones')
-      .then((todas) => {
+    async function cargar() {
+      try {
+        const todas = await apiFetch<Notificacion[]>('/notificaciones')
         if (!activo) return
         const recientes = [...todas]
           .sort((a, b) => new Date(b.fecha_envio).getTime() - new Date(a.fecha_envio).getTime())
           .slice(0, 8)
         setNotificaciones(recientes)
-        setPunto(recientes.some((n) => !n.leida))
-        setCargadas(true)
-      })
-      .catch(() => {
+
+        const hayNoLeidas = recientes.some((n) => !n.leida)
+        if (hayNoLeidas && abiertoRef.current) {
+          // Si la lista ya está abierta, lo nuevo se está viendo: no hace falta el punto.
+          setPunto(false)
+          void marcarLeidas()
+        } else {
+          setPunto(hayNoLeidas)
+        }
+      } catch {
+        // Un fallo de red al actualizar solo se ignora; se reintenta en el siguiente ciclo.
+      } finally {
         if (activo) setCargadas(true)
-      })
+      }
+    }
+
+    void cargar()
+
+    // No se consulta con la pestaña en segundo plano; al volver a ella se actualiza al instante.
+    const temporizador = window.setInterval(() => {
+      if (!document.hidden) void cargar()
+    }, SEGUNDOS_ACTUALIZACION * 1000)
+
+    function alVolverALaPestana() {
+      if (!document.hidden) void cargar()
+    }
+    document.addEventListener('visibilitychange', alVolverALaPestana)
 
     return () => {
       activo = false
+      window.clearInterval(temporizador)
+      document.removeEventListener('visibilitychange', alVolverALaPestana)
     }
   }, [])
 
@@ -48,11 +89,7 @@ export default function Notificaciones() {
 
     if (abriendo && punto) {
       setPunto(false)
-      try {
-        await apiFetch('/notificaciones/marcar-leidas', { method: 'PATCH' })
-      } catch (e) {
-        console.error('No se pudieron marcar como leídas:', e)
-      }
+      await marcarLeidas()
     }
   }
 
