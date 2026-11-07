@@ -89,7 +89,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Map<String, bool> get _requisitosPassword {
     final p = _passwordController.text;
     return {
-      'Mínimo 4 caracteres': p.length >= 4,
+      'Mínimo 8 caracteres': p.length >= 8,
       '1 mayúscula': RegExp(r'[A-Z]').hasMatch(p),
       '1 minúscula': RegExp(r'[a-z]').hasMatch(p),
       '1 número': RegExp(r'[0-9]').hasMatch(p),
