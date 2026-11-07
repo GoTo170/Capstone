@@ -247,6 +247,7 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
             status_code=400,
             detail="El autoregistro solo está permitido para los roles 'familiar' y 'cuidador'",
         )
+    validar_largo_contrasena(usuario.password)
 
     ya_existe = db.query(models.Usuario).filter(models.Usuario.email == usuario.email).first()
     if ya_existe:
@@ -319,8 +320,7 @@ def crear_miembro_equipo(
         raise HTTPException(status_code=400, detail="Rol no permitido para el equipo interno")
     if datos.rol_interno not in ROLES_INTERNOS_EQUIPO:
         raise HTTPException(status_code=400, detail="Indica el rol interno: superadmin, moderador o soporte")
-    if len(datos.password) < 8:
-        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
+    validar_largo_contrasena(datos.password)
 
     ya_existe = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
     if ya_existe:
@@ -389,10 +389,62 @@ def cambiar_rol_interno(
 
 @app.post("/login", response_model=schemas.Token)
 def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
+    correo = str(datos.email).strip().lower()
+    ahora = datetime.now()
+    ventana = timedelta(minutes=MINUTOS_BLOQUEO_LOGIN)
+
+    # Intentos fallidos recientes de este correo (existan o no en el sistema: no se revela cuáles existen).
+    db.query(models.IntentoLogin).filter(
+        models.IntentoLogin.email == correo, models.IntentoLogin.fecha < ahora - ventana
+    ).delete(synchronize_session=False)
+    fallos = db.query(models.IntentoLogin).filter(
+        models.IntentoLogin.email == correo
+    ).order_by(models.IntentoLogin.fecha).all()
+
+    if len(fallos) >= MAX_INTENTOS_LOGIN:
+        segundos = max(1, int((fallos[-1].fecha + ventana - ahora).total_seconds()))
+        minutos_restantes = -(-segundos // 60)
+        db.commit()
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Demasiados intentos fallidos. "
+                f"Intenta de nuevo en {minutos_restantes} minuto{'s' if minutos_restantes != 1 else ''}."
+            ),
+            headers={"Retry-After": str(segundos)},
+        )
+
     usuario = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
 
     if not usuario or not usuario.password_hash or not verify_password(datos.password, usuario.password_hash):
-        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+        db.add(models.IntentoLogin(id=uuid.uuid4(), email=correo, fecha=ahora))
+        db.commit()
+        restantes = MAX_INTENTOS_LOGIN - (len(fallos) + 1)
+        if restantes <= 0:
+            if usuario and usuario.rol == "administrador":
+                registrar_auditoria(
+                    db, usuario.id, "Cuenta bloqueada temporalmente", "sesion", usuario.id,
+                    f"{MAX_INTENTOS_LOGIN} intentos fallidos de inicio de sesión",
+                )
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Demasiados intentos fallidos. "
+                    f"El acceso quedó bloqueado por {MINUTOS_BLOQUEO_LOGIN} minutos."
+                ),
+                headers={"Retry-After": str(MINUTOS_BLOQUEO_LOGIN * 60)},
+            )
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Correo o contraseña incorrectos. "
+                f"Te quedan {restantes} intento{'s' if restantes != 1 else ''}."
+            ),
+        )
+
+    # Clave correcta: se olvidan los fallos anteriores.
+    db.query(models.IntentoLogin).filter(models.IntentoLogin.email == correo).delete(synchronize_session=False)
+    db.commit()
 
     if not usuario.activo:
         raise HTTPException(status_code=403, detail="Esta cuenta está desactivada")
@@ -423,6 +475,20 @@ def mi_perfil(usuario_actual: models.Usuario = Depends(obtener_usuario_actual)):
  
  
 LARGO_MINIMO_CONTRASENA = 8
+
+# Límite de intentos de login: tras MAX_INTENTOS_LOGIN fallos seguidos en la ventana,
+# ese correo queda bloqueado MINUTOS_BLOQUEO_LOGIN minutos (aunque ponga la clave correcta).
+MAX_INTENTOS_LOGIN = 5
+MINUTOS_BLOQUEO_LOGIN = 15
+
+
+def validar_largo_contrasena(password: str, sujeto: str = "La contraseña"):
+    if len(password or "") < LARGO_MINIMO_CONTRASENA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{sujeto} debe tener al menos {LARGO_MINIMO_CONTRASENA} caracteres",
+        )
+
  
  
 @app.post("/perfil/verificar-contrasena")

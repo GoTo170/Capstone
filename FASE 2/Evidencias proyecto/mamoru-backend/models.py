@@ -232,3 +232,12 @@ class SolicitudCambioAdulto(Base):
     fecha_solicitud = Column(TIMESTAMP, server_default=text("now()"))
     fecha_resolucion = Column(TIMESTAMP)
     resuelto_por_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"))
+
+
+class IntentoLogin(Base):
+    """Un intento de inicio de sesión fallido. Sirve para bloquear temporalmente el acceso."""
+    __tablename__ = "intentos_login"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    email = Column(String(150), nullable=False, index=True)  # en minúsculas
+    fecha = Column(TIMESTAMP, nullable=False)
