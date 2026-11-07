@@ -164,7 +164,10 @@ export default function Cuidadores() {
   const [motivo, setMotivo] = useState('')
   const [rechazo, setRechazo] = useState<AccionRechazo | null>(null)
   const [detalle, setDetalle] = useState<DetalleRechazo | null>(null)
-  const [documentoCargando, setDocumentoCargando] = useState<string | null>(null)
+  // Qué documento se está pidiendo y para qué: cada botón muestra su propio "cargando".
+  const [documentoCargando, setDocumentoCargando] = useState<{ id: string; accion: 'ver' | 'descargar' } | null>(null)
+  // Si el navegador bloquea la pestaña nueva, el enlace queda visible para abrirlo con un clic.
+  const [enlaceManual, setEnlaceManual] = useState<{ id: string; url: string } | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -207,8 +210,9 @@ export default function Cuidadores() {
 
   // El documento está en un espacio privado: se pide un enlace nuevo cada vez que se abre o descarga.
   async function verDocumento(perfil: PerfilCuidador, descargar: boolean) {
-    setDocumentoCargando(perfil.id)
+    setDocumentoCargando({ id: perfil.id, accion: descargar ? 'descargar' : 'ver' })
     setError('')
+    setEnlaceManual(null)
     // La pestaña se abre antes de la petición para que el navegador no la bloquee.
     const ventana = descargar ? null : window.open('', '_blank')
     try {
@@ -224,8 +228,9 @@ export default function Cuidadores() {
         a.remove()
       } else if (ventana) {
         ventana.location.href = enlace.url
-      } else {
-        window.open(enlace.url, '_blank')
+      } else if (!window.open(enlace.url, '_blank')) {
+        // El navegador no dejó abrir la pestaña: se ofrece el enlace para abrirlo a mano.
+        setEnlaceManual({ id: perfil.id, url: enlace.url })
       }
     } catch (e) {
       ventana?.close()
@@ -298,8 +303,8 @@ export default function Cuidadores() {
       return new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()
     })
 
-  // 6 tarjetas por página; vuelve a la primera al cambiar pestaña, búsqueda o filtros.
-  const pag = usePaginacion(visibles, 6, `${pestana}|${busqueda}|${JSON.stringify(filtros)}`)
+  // 12 tarjetas por página; vuelve a la primera al cambiar pestaña, búsqueda o filtros.
+  const pag = usePaginacion(visibles, 12, `${pestana}|${busqueda}|${JSON.stringify(filtros)}`)
 
   return (
     <>
@@ -449,18 +454,23 @@ export default function Cuidadores() {
                   >
                     <button
                       className="btn"
-                      disabled={documentoCargando === c.id}
+                      disabled={documentoCargando?.id === c.id}
                       onClick={() => verDocumento(c, false)}
                     >
-                      {documentoCargando === c.id ? 'Abriendo…' : 'Ver documento'}
+                      {documentoCargando?.id === c.id && documentoCargando?.accion === 'ver' ? 'Abriendo…' : 'Ver documento'}
                     </button>
                     <button
                       className="btn"
-                      disabled={documentoCargando === c.id}
+                      disabled={documentoCargando?.id === c.id}
                       onClick={() => verDocumento(c, true)}
                     >
-                      Descargar
+                      {documentoCargando?.id === c.id && documentoCargando?.accion === 'descargar' ? 'Descargando…' : 'Descargar'}
                     </button>
+                    {enlaceManual?.id === c.id && (
+                      <a className="enlace-documento" href={enlaceManual?.url} target="_blank" rel="noopener noreferrer">
+                        Abrir documento ↗
+                      </a>
+                    )}
                   </div>
                 ) : (
                   c.estado_validacion === 'pendiente' && (

@@ -1620,3 +1620,12 @@ body {
   font-weight: 500;
   vertical-align: middle;
 }
+
+/* ---------- Enlace de respaldo para abrir el documento del cuidador ---------- */
+.enlace-documento {
+  align-self: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent, inherit);
+  text-decoration: underline;
+}
