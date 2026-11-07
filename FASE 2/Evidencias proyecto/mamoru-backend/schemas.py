@@ -773,3 +773,8 @@ class CambioAdultoDecision(BaseModel):
 
 class RolInternoCambio(BaseModel):
     rol_interno: str  # superadmin, moderador o soporte
+
+
+class AjusteNotificacionCambio(BaseModel):
+    clave: str
+    activa: bool

@@ -241,3 +241,11 @@ class IntentoLogin(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     email = Column(String(150), nullable=False, index=True)  # en minúsculas
     fecha = Column(TIMESTAMP, nullable=False)
+
+
+class AjusteNotificacion(Base):
+    """Preferencias de aviso de un administrador (JSON: {categoria: true/false})."""
+    __tablename__ = "ajustes_notificacion"
+
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    datos = Column(Text, nullable=False, default="{}")

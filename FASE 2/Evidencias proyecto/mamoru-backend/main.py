@@ -147,9 +147,79 @@ def registrar_auditoria(db, admin_id, accion, entidad_tipo, entidad_id=None, det
     db.commit()
 
 
+# ------------------------------------------------------------
+# Avisos al equipo interno
+# ------------------------------------------------------------
+# Cada categoría agrupa tipos de aviso, exige un permiso (solo lo recibe quien lo tiene)
+# y cada administrador puede apagarla en Configuración.
+CATEGORIAS_NOTIFICACION = {
+    "cuidadores": {
+        "titulo": "Cuidadores",
+        "descripcion": "Cuidadores nuevos por validar, solicitudes de puertas adentro y reseñas reportadas.",
+        "permiso": "cuidadores",
+        "por_defecto": True,
+        "tipos": ("cuidador_nuevo", "puertas_adentro_solicitada", "resena_reportada"),
+    },
+    "cambios_datos": {
+        "titulo": "Cambios de datos del adulto mayor",
+        "descripcion": "Cuando una familia propone cambiar salud, alergias o contactos de emergencia.",
+        "permiso": "soporte",
+        "por_defecto": True,
+        "tipos": ("cambio_datos_solicitado",),
+    },
+    "alertas_sos": {
+        "titulo": "Alertas SOS",
+        "descripcion": "Aviso inmediato cuando un adulto mayor activa el botón SOS.",
+        "permiso": "soporte",
+        "por_defecto": True,
+        "tipos": ("alerta_sos_admin",),
+    },
+    "solicitudes": {
+        "titulo": "Solicitudes de servicio",
+        "descripcion": "Cuando una familia envía una solicitud a un cuidador.",
+        "permiso": "soporte",
+        "por_defecto": False,
+        "tipos": ("solicitud_servicio_nueva",),
+    },
+}
+
+
+def _categoria_de_tipo(tipo):
+    for clave, categoria in CATEGORIAS_NOTIFICACION.items():
+        if tipo in categoria["tipos"]:
+            return clave
+    return None
+
+
+def _preferencias_guardadas(fila) -> dict:
+    try:
+        datos = json.loads(fila.datos) if fila and fila.datos else {}
+        return datos if isinstance(datos, dict) else {}
+    except ValueError:
+        return {}
+
+
+def ajustes_notificacion_de(db, usuario) -> dict:
+    """{categoria: activa} de las categorías que el rol del usuario puede recibir."""
+    fila = db.query(models.AjusteNotificacion).filter(models.AjusteNotificacion.usuario_id == usuario.id).first()
+    guardado = _preferencias_guardadas(fila)
+    return {
+        clave: bool(guardado.get(clave, categoria["por_defecto"]))
+        for clave, categoria in CATEGORIAS_NOTIFICACION.items()
+        if tiene_permiso(usuario, categoria["permiso"])
+    }
+
+
 def notificar_administradores(db, tipo, mensaje):
-    administradores = db.query(models.Usuario).filter(models.Usuario.rol == "administrador").all()
+    """Avisa al equipo: solo a quien tiene el permiso de la categoría y no la apagó."""
+    administradores = db.query(models.Usuario).filter(
+        models.Usuario.rol == "administrador",
+        models.Usuario.activo.is_not(False),
+    ).all()
+    clave = _categoria_de_tipo(tipo)
     for admin in administradores:
+        if clave is not None and not ajustes_notificacion_de(db, admin).get(clave, False):
+            continue
         db.add(models.Notificacion(usuario_id=admin.id, tipo=tipo, mensaje=mensaje))
     db.commit()
 
@@ -277,6 +347,13 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
 
     db.commit()
     db.refresh(nuevo_usuario)
+
+    if usuario.rol == "cuidador":
+        notificar_administradores(
+            db,
+            "cuidador_nuevo",
+            f"{nuevo_usuario.nombre} se registró como cuidador y espera validación",
+        )
     return nuevo_usuario
 
 
@@ -459,6 +536,47 @@ def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
     return schemas.Token(access_token=token, usuario=usuario_out)
  
  
+@app.get("/perfil/ajustes-notificacion")
+def ver_ajustes_notificacion(
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    """Las categorías que este rol puede recibir, con su estado."""
+    ajustes = ajustes_notificacion_de(db, admin_actual)
+    return [
+        {
+            "clave": clave,
+            "titulo": CATEGORIAS_NOTIFICACION[clave]["titulo"],
+            "descripcion": CATEGORIAS_NOTIFICACION[clave]["descripcion"],
+            "activa": activa,
+        }
+        for clave, activa in ajustes.items()
+    ]
+
+
+@app.patch("/perfil/ajustes-notificacion")
+def cambiar_ajuste_notificacion(
+    datos: schemas.AjusteNotificacionCambio,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    categoria = CATEGORIAS_NOTIFICACION.get(datos.clave)
+    if categoria is None or not tiene_permiso(admin_actual, categoria["permiso"]):
+        raise HTTPException(status_code=404, detail="Ese aviso no existe para tu rol")
+
+    fila = db.query(models.AjusteNotificacion).filter(
+        models.AjusteNotificacion.usuario_id == admin_actual.id
+    ).first()
+    guardado = _preferencias_guardadas(fila)
+    guardado[datos.clave] = datos.activa
+    if fila is None:
+        db.add(models.AjusteNotificacion(usuario_id=admin_actual.id, datos=json.dumps(guardado)))
+    else:
+        fila.datos = json.dumps(guardado)
+    db.commit()
+    return {"clave": datos.clave, "activa": datos.activa}
+
+
 @app.post("/logout")
 def logout(
     db: Session = Depends(get_db),
@@ -1425,6 +1543,9 @@ def crear_solicitud(
        mensaje=f"{familiar_actual.nombre} te envió una solicitud de servicio",
    ))
    db.commit()
+   notificar_administradores(
+       db, "solicitud_servicio_nueva", f"{familiar_actual.nombre} envió una solicitud de servicio"
+   )
    db.refresh(nueva)
    return nueva
  
@@ -2180,6 +2301,10 @@ def crear_alerta_sos(
     db.add(nueva)
     db.commit()
     db.refresh(nueva)
+
+    notificar_administradores(
+        db, "alerta_sos_admin", f"{adulto_mayor_actual.nombre} activó el botón SOS"
+    )
 
     familiares = db.query(models.Vinculacion).filter(
         models.Vinculacion.adulto_mayor_id == adulto_mayor_actual.id,
