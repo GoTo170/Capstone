@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
+import CampoContrasena from '../components/CampoContrasena'
 
 const MINIMO = 8
 
@@ -62,10 +63,10 @@ export default function RestablecerContrasena() {
       <form onSubmit={manejarEnvio}>
         <div className="field">
           <label htmlFor="nueva">Nueva contraseña</label>
-          <input
-            type="password"
+          <CampoContrasena
             id="nueva"
             placeholder="Mínimo 8 caracteres"
+            autoComplete="new-password"
             value={nueva}
             onChange={(e) => setNueva(e.target.value)}
             required
@@ -73,10 +74,10 @@ export default function RestablecerContrasena() {
         </div>
         <div className="field">
           <label htmlFor="confirmacion">Confirmar contraseña</label>
-          <input
-            type="password"
+          <CampoContrasena
             id="confirmacion"
             placeholder="Repite la contraseña"
+            autoComplete="new-password"
             value={confirmacion}
             onChange={(e) => setConfirmacion(e.target.value)}
             required

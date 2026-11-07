@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
+import CampoContrasena from './CampoContrasena'
 import { apiFetch, cerrarSesion } from '../lib/api'
 
 const LARGO_MINIMO = 8
@@ -18,6 +19,10 @@ const estiloCampo: CSSProperties = {
   boxSizing: 'border-box',
   marginBottom: 10,
 }
+
+// Con ojo: sin margen propio (lo da el contenedor) y con espacio a la derecha para el ícono.
+const estiloCampoClave: CSSProperties = { ...estiloCampo, marginBottom: 0, paddingRight: 40 }
+const estiloSeparacion: CSSProperties = { marginBottom: 10 }
 
 const estiloEtiqueta: CSSProperties = { display: 'block', fontSize: 12, marginBottom: 4 }
 
@@ -125,15 +130,16 @@ export default function CambiarContrasena() {
             <label style={estiloEtiqueta} htmlFor="pw-actual">
               Contraseña actual
             </label>
-            <input
-              id="pw-actual"
-              type="password"
-              style={estiloCampo}
-              autoFocus
-              autoComplete="current-password"
-              value={actual}
-              onChange={(e) => setActual(e.target.value)}
-            />
+            <div style={estiloSeparacion}>
+              <CampoContrasena
+                id="pw-actual"
+                style={estiloCampoClave}
+                autoFocus
+                autoComplete="current-password"
+                value={actual}
+                onChange={(e) => setActual(e.target.value)}
+              />
+            </div>
             {error && <div className="auth-error" style={{ display: 'block' }}>{error}</div>}
           </form>
         </Modal>
@@ -163,26 +169,28 @@ export default function CambiarContrasena() {
             <label style={estiloEtiqueta} htmlFor="pw-nueva">
               Contraseña nueva (mínimo {LARGO_MINIMO} caracteres)
             </label>
-            <input
-              id="pw-nueva"
-              type="password"
-              style={estiloCampo}
-              autoFocus
-              autoComplete="new-password"
-              value={nueva}
-              onChange={(e) => setNueva(e.target.value)}
-            />
+            <div style={estiloSeparacion}>
+              <CampoContrasena
+                id="pw-nueva"
+                style={estiloCampoClave}
+                autoFocus
+                autoComplete="new-password"
+                value={nueva}
+                onChange={(e) => setNueva(e.target.value)}
+              />
+            </div>
             <label style={estiloEtiqueta} htmlFor="pw-confirmacion">
               Repite la contraseña nueva
             </label>
-            <input
-              id="pw-confirmacion"
-              type="password"
-              style={estiloCampo}
-              autoComplete="new-password"
-              value={confirmacion}
-              onChange={(e) => setConfirmacion(e.target.value)}
-            />
+            <div style={estiloSeparacion}>
+              <CampoContrasena
+                id="pw-confirmacion"
+                style={estiloCampoClave}
+                autoComplete="new-password"
+                value={confirmacion}
+                onChange={(e) => setConfirmacion(e.target.value)}
+              />
+            </div>
             <p style={{ fontSize: 12, opacity: 0.8 }}>Al guardar, tu sesión se cerrará y tendrás que entrar con la contraseña nueva.</p>
             {error && <div className="auth-error" style={{ display: 'block' }}>{error}</div>}
           </form>

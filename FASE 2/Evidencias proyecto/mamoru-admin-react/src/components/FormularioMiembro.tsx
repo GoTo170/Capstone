@@ -3,6 +3,7 @@ import { DESCRIPCION_ROL_INTERNO, ETIQUETA_ROL_INTERNO, ROLES_INTERNOS, apiFetch
 import { normalizar } from '../lib/busqueda'
 import { nombreCompleto } from '../lib/formato'
 import Modal from './Modal'
+import CampoContrasena from './CampoContrasena'
 
 interface Props {
   onCerrar: () => void
@@ -208,10 +209,10 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
           <div className="field-row">
             <div className="field">
               <label htmlFor="mm-pass">Contraseña</label>
-              <input
+              <CampoContrasena
                 id="mm-pass"
-                type="password"
                 minLength={8}
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -219,9 +220,9 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
             </div>
             <div className="field">
               <label htmlFor="mm-pass2">Confirmar contraseña</label>
-              <input
+              <CampoContrasena
                 id="mm-pass2"
-                type="password"
+                autoComplete="new-password"
                 value={confirmar}
                 onChange={(e) => setConfirmar(e.target.value)}
                 required

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { apiFetch, guardarSesion, obtenerToken, type LoginResponse } from '../lib/api'
+import CampoContrasena from '../components/CampoContrasena'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -92,10 +93,10 @@ export default function Login() {
             </div>
             <div className="field">
               <label htmlFor="password">Contraseña</label>
-              <input
-                type="password"
+              <CampoContrasena
                 id="password"
                 placeholder="••••••••"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

@@ -1546,3 +1546,57 @@ body {
   pointer-events: none;
   opacity: 0.7;
 }
+
+/* ---------- Campo de contraseña con ojo (CampoContrasena) ---------- */
+.campo-password {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.campo-password input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 44px;
+}
+
+/* El navegador (Edge) trae su propio ojo; se oculta para que no salgan dos. */
+.campo-password input::-ms-reveal,
+.campo-password input::-ms-clear {
+  display: none;
+}
+
+.campo-password-ojo {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.campo-password-ojo:hover,
+.campo-password-ojo[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.campo-password-ojo:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.campo-password input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 44px;
+}
