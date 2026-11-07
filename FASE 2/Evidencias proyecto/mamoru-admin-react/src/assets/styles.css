@@ -1600,3 +1600,23 @@ body {
   box-sizing: border-box;
   padding-right: 44px;
 }
+
+/* ---------- Ajustes de notificación: fila "Próximamente" ---------- */
+.setting-row.proximamente {
+  opacity: 0.6;
+}
+
+.setting-row.proximamente .toggle {
+  cursor: not-allowed;
+}
+
+.etiqueta-pronto {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
+}

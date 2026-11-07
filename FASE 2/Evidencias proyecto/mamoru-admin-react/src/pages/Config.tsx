@@ -14,43 +14,18 @@ import {
 } from '../lib/api'
 import { nombreCompleto } from '../lib/formato'
 
-const CLAVE_AJUSTES = 'mamoru_ajustes'
-
-const AJUSTES = [
-  {
-    clave: 'notif_solicitudes',
-    titulo: 'Notificar nuevas solicitudes de servicio',
-    descripcion: 'Enviar un correo al equipo de soporte cuando una familia solicite un cuidador.',
-    porDefecto: true,
-  },
-  {
-    clave: 'notif_sos',
-    titulo: 'Notificar alertas SOS',
-    descripcion: 'Aviso inmediato al equipo de soporte ante cualquier botón SOS activado.',
-    porDefecto: true,
-  },
-  {
-    clave: 'resumen_semanal',
-    titulo: 'Resumen semanal de adopción',
-    descripcion: 'Correo con métricas de usuarios, cuidadores y solicitudes cada lunes.',
-    porDefecto: false,
-  },
-]
-
-function cargarAjustes(): Record<string, boolean> {
-  const base: Record<string, boolean> = Object.fromEntries(AJUSTES.map((a) => [a.clave, a.porDefecto]))
-  try {
-    const guardado = JSON.parse(localStorage.getItem(CLAVE_AJUSTES) ?? '{}') as Record<string, boolean>
-    return { ...base, ...guardado }
-  } catch {
-    return base
-  }
+interface AjusteNotificacion {
+  clave: string
+  titulo: string
+  descripcion: string
+  activa: boolean
 }
 
 export default function Config() {
   const [usuarios, setUsuarios] = useState<Usuario[] | null>(null)
   const [error, setError] = useState('')
-  const [activos, setActivos] = useState<Record<string, boolean>>(cargarAjustes)
+  const [ajustes, setAjustes] = useState<AjusteNotificacion[] | null>(null)
+  const [errorAjustes, setErrorAjustes] = useState('')
   const [nuevoAbierto, setNuevoAbierto] = useState(false)
   const [cambioRol, setCambioRol] = useState<{ usuario: Usuario; nuevo: string } | null>(null)
   const [guardandoRol, setGuardandoRol] = useState(false)
@@ -77,10 +52,39 @@ export default function Config() {
     }
   }, [gestionaEquipo])
 
-  function alternar(clave: string) {
-    const siguiente = { ...activos, [clave]: !activos[clave] }
-    setActivos(siguiente)
-    localStorage.setItem(CLAVE_AJUSTES, JSON.stringify(siguiente))
+  // Los avisos que tu rol puede recibir; se guardan en el servidor, no en este navegador.
+  useEffect(() => {
+    let activo = true
+    apiFetch<AjusteNotificacion[]>('/perfil/ajustes-notificacion')
+      .then((lista) => {
+        if (activo) setAjustes(lista)
+      })
+      .catch((e: unknown) => {
+        if (activo) setErrorAjustes(e instanceof Error ? e.message : 'No se pudieron cargar los avisos')
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
+
+  async function alternar(clave: string) {
+    const actual = ajustes?.find((a) => a.clave === clave)
+    if (!actual) return
+    const nuevo = !actual.activa
+    setErrorAjustes('')
+    // Se muestra el cambio al instante; si el servidor falla, se devuelve.
+    const marcar = (valor: boolean) =>
+      setAjustes((prev) => (prev ? prev.map((a) => (a.clave === clave ? { ...a, activa: valor } : a)) : prev))
+    marcar(nuevo)
+    try {
+      await apiFetch('/perfil/ajustes-notificacion', {
+        method: 'PATCH',
+        body: JSON.stringify({ clave, activa: nuevo }),
+      })
+    } catch (e) {
+      marcar(!nuevo)
+      setErrorAjustes(e instanceof Error ? e.message : 'No se pudo guardar el cambio')
+    }
   }
 
   async function confirmarCambioRol() {
@@ -123,20 +127,35 @@ export default function Config() {
           <h2>Notificaciones</h2>
         </div>
         <div className="settings-group">
-          {AJUSTES.map((a) => (
+          {errorAjustes && (
+            <div className="auth-error" style={{ display: 'block' }}>
+              {errorAjustes}
+            </div>
+          )}
+          {ajustes === null && !errorAjustes && <div className="setting-desc">Cargando avisos…</div>}
+          {(ajustes ?? []).map((a) => (
             <div className="setting-row" key={a.clave}>
               <div>
                 <div className="setting-label">{a.titulo}</div>
                 <div className="setting-desc">{a.descripcion}</div>
               </div>
               <button
-                className={activos[a.clave] ? 'toggle on' : 'toggle'}
+                className={a.activa ? 'toggle on' : 'toggle'}
                 onClick={() => alternar(a.clave)}
                 aria-label={a.titulo}
-                aria-pressed={activos[a.clave]}
+                aria-pressed={a.activa}
               ></button>
             </div>
           ))}
+          <div className="setting-row proximamente">
+            <div>
+              <div className="setting-label">
+                Avisos por correo <span className="etiqueta-pronto">Próximamente</span>
+              </div>
+              <div className="setting-desc">Recibir estos mismos avisos en tu correo y un resumen semanal.</div>
+            </div>
+            <button className="toggle" disabled aria-label="Avisos por correo (próximamente)"></button>
+          </div>
         </div>
       </div>
 
