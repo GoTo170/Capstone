@@ -15,6 +15,7 @@ from database import engine, get_db, Base
 import models
 import schemas
 import push
+import correo
 from security import hash_password, verify_password, crear_token_acceso, verificar_token
 
 from almacenamiento import (
@@ -293,6 +294,18 @@ def cuidador_tiene_acceso(db, cuidador_usuario_id, adulto_mayor_id) -> bool:
 @app.get("/")
 def inicio():
     return {"mensaje": "Mamoru API funcionando"}
+
+
+@app.post("/admin/correo-prueba")
+def correo_de_prueba(usuario_actual: models.Usuario = Depends(requerir_administrador)):
+    """Envía un correo de prueba al email del administrador que lo pide."""
+    if not correo.correo_configurado():
+        raise HTTPException(status_code=503, detail="El correo no está configurado en el servidor")
+    asunto, cuerpo = correo.correo_cuidador_aprobado(usuario_actual.nombre)
+    ok, detalle = correo.enviar_correo(usuario_actual.email, "[Prueba] " + asunto, cuerpo, esperar=True)
+    if not ok:
+        raise HTTPException(status_code=502, detail=f"No se pudo enviar: {detalle}")
+    return {"enviado_a": usuario_actual.email}
 
 
 @app.get("/salud")
@@ -710,7 +723,17 @@ def actualizar_estado_cuidador(
  
     db.commit()
     db.refresh(perfil)
- 
+
+    # Correo al cuidador cuando cambia a aprobado o rechazado (no se repite si el estado no cambió).
+    if datos.estado_validacion != estado_anterior and datos.estado_validacion in ("aprobado", "rechazado"):
+        cuidador = db.query(models.Usuario).filter(models.Usuario.id == perfil.usuario_id).first()
+        if cuidador and cuidador.email:
+            if datos.estado_validacion == "aprobado":
+                asunto, cuerpo = correo.correo_cuidador_aprobado(cuidador.nombre)
+            else:
+                asunto, cuerpo = correo.correo_cuidador_rechazado(cuidador.nombre, motivo)
+            correo.enviar_correo(cuidador.email, asunto, cuerpo)
+
     if datos.estado_validacion == "aprobado":
         accion = "Aprobó cuidador"
     elif datos.estado_validacion == "rechazado":
