@@ -19,6 +19,7 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
   String? _fotoUrl;
   bool _cargando = true;
   String? _error;
+  bool _contactosPendientes = false;
  
   @override
   void initState() {
@@ -40,6 +41,7 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
       setState(() {
         _perfil = detalle.perfil;
         _fotoUrl = detalle.fotoUrl;
+        _contactosPendientes = detalle.cambiosPendientes.contains('contactos');
         _cargando = false;
       });
     } on ApiException catch (e) {
@@ -51,6 +53,13 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
     }
   }
  
+  void _avisarEnviado(String que) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Cambios de $que enviados. Se aplicarán cuando el administrador los apruebe.'), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_cargando || _error != null) {
@@ -156,15 +165,24 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
                       titulo: 'Información de salud',
                       pendienteAprobacion: _perfil.saludPendienteAprobacion,
                       onEditar: () async {
-                        final resultado = await Navigator.push<List<String>>(
+                        final enviado = await Navigator.push<bool>(
                           context,
-                          MaterialPageRoute(builder: (_) => _EditarListaScreen(titulo: 'Condiciones médicas', items: _perfil.condicionesMedicas, minCaracteres: 3, maxCaracteres: 70, maxItems: 30, ejemplo: 'Ej: Diabetes tipo 2')),
+                          MaterialPageRoute(
+                            builder: (_) => _EditarListaScreen(
+                              titulo: 'Condiciones médicas',
+                              items: _perfil.condicionesMedicas,
+                              minCaracteres: 3,
+                              maxCaracteres: 70,
+                              maxItems: 30,
+                              ejemplo: 'Ej: Diabetes tipo 2',
+                              onEnviar: (items) => FamiliarService.proponerCambioSalud(widget.adultoMayorId, items),
+                            ),
+                          ),
                         );
-                        if (resultado != null) {
-                          setState(() {
-                            _perfil.condicionesMedicas = resultado;
-                            _perfil.saludPendienteAprobacion = true;
-                          });
+                        if (enviado == true && mounted) {
+                          // El perfil sigue mostrando los datos actuales hasta que se aprueben.
+                          setState(() => _perfil.saludPendienteAprobacion = true);
+                          _avisarEnviado('salud');
                         }
                       },
                       child: Column(
@@ -200,23 +218,25 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
                       titulo: 'Alergias e intolerancias',
                       pendienteAprobacion: _perfil.alergiasPendienteAprobacion,
                       onEditar: () async {
-                        final resultado = await Navigator.push<_ResultadoAlergias>(
+                        final enviado = await Navigator.push<bool>(
                           context,
                           MaterialPageRoute(
                             builder: (_) => _EditarAlergiasScreen(
                               medicamentos: _perfil.alergiaMedicamentos,
                               alimentos: _perfil.alergiaAlimentos,
                               intolerancias: _perfil.intolerancias,
+                              onEnviar: (r) => FamiliarService.proponerCambioAlergias(
+                                widget.adultoMayorId,
+                                medicamentos: r.medicamentos,
+                                alimentos: r.alimentos,
+                                intolerancias: r.intolerancias,
+                              ),
                             ),
                           ),
                         );
-                        if (resultado != null) {
-                          setState(() {
-                            _perfil.alergiaMedicamentos = resultado.medicamentos;
-                            _perfil.alergiaAlimentos = resultado.alimentos;
-                            _perfil.intolerancias = resultado.intolerancias;
-                            _perfil.alergiasPendienteAprobacion = true;
-                          });
+                        if (enviado == true && mounted) {
+                          setState(() => _perfil.alergiasPendienteAprobacion = true);
+                          _avisarEnviado('alergias e intolerancias');
                         }
                       },
                       child: Column(
@@ -233,9 +253,9 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
                     const SizedBox(height: 16),
                     _TarjetaBlanca(
                       titulo: 'Contactos de emergencia',
-                      // Los contactos se guardan directamente (sin aprobación del administrador).
+                      pendienteAprobacion: _contactosPendientes,
                       onEditar: () async {
-                        final resultado = await Navigator.push<List<ContactoEmergenciaInfo>>(
+                        final enviado = await Navigator.push<bool>(
                           context,
                           MaterialPageRoute(
                             builder: (_) => _EditarContactosScreen(
@@ -244,11 +264,9 @@ class _DetalleAdultoMayorVinculadoScreenState extends State<DetalleAdultoMayorVi
                             ),
                           ),
                         );
-                        if (resultado != null && mounted) {
-                          setState(() => _perfil.contactosEmergencia = resultado);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Contactos de emergencia actualizados'), behavior: SnackBarBehavior.floating),
-                          );
+                        if (enviado == true && mounted) {
+                          setState(() => _contactosPendientes = true);
+                          _avisarEnviado('contactos de emergencia');
                         }
                       },
                       child: Column(
@@ -392,6 +410,7 @@ class _EditarListaScreen extends StatefulWidget {
   final int maxCaracteres;
   final int maxItems;
   final String ejemplo;
+  final Future<void> Function(List<String>) onEnviar;
  
   const _EditarListaScreen({
     required this.titulo,
@@ -400,6 +419,7 @@ class _EditarListaScreen extends StatefulWidget {
     required this.maxCaracteres,
     required this.maxItems,
     required this.ejemplo,
+    required this.onEnviar,
   });
  
   @override
@@ -411,6 +431,7 @@ class _EditarListaScreenState extends State<_EditarListaScreen> {
       ? [TextEditingController()]
       : widget.items.map((i) => TextEditingController(text: i)).toList();
   bool _formularioFueEnviado = false;
+  bool _enviando = false;
  
   bool _itemValido(String texto) {
     final largo = texto.trim().length;
@@ -429,10 +450,21 @@ class _EditarListaScreenState extends State<_EditarListaScreen> {
     setState(() => _controladores.removeAt(index));
   }
  
-  void _guardar() {
+  Future<void> _guardar() async {
     setState(() => _formularioFueEnviado = true);
-    if (!_todoValido) return;
-    Navigator.pop(context, _controladores.map((c) => c.text.trim()).toList());
+    if (!_todoValido || _enviando) return;
+
+    setState(() => _enviando = true);
+    try {
+      await widget.onEnviar(_controladores.map((c) => c.text.trim()).toList());
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.mensaje), behavior: SnackBarBehavior.floating));
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
   }
  
   @override
@@ -476,9 +508,11 @@ class _EditarListaScreenState extends State<_EditarListaScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: _guardar,
+              onPressed: _enviando ? null : _guardar,
               style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-              child: const Text('Enviar cambios para aprobación'),
+              child: _enviando
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Enviar cambios para aprobación'),
             ),
           ],
         ),
@@ -499,8 +533,9 @@ class _EditarAlergiasScreen extends StatefulWidget {
   final List<String> medicamentos;
   final List<String> alimentos;
   final List<String> intolerancias;
+  final Future<void> Function(_ResultadoAlergias) onEnviar;
  
-  const _EditarAlergiasScreen({required this.medicamentos, required this.alimentos, required this.intolerancias});
+  const _EditarAlergiasScreen({required this.medicamentos, required this.alimentos, required this.intolerancias, required this.onEnviar});
  
   @override
   State<_EditarAlergiasScreen> createState() => _EditarAlergiasScreenState();
@@ -511,6 +546,7 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
   late List<TextEditingController> _aliControllers = widget.alimentos.map((e) => TextEditingController(text: e)).toList();
   late List<TextEditingController> _intControllers = widget.intolerancias.map((e) => TextEditingController(text: e)).toList();
   bool _formularioFueEnviado = false;
+  bool _enviando = false;
  
   bool _valido(String t, int min, int max) => t.trim().length >= min && t.trim().length <= max;
  
@@ -519,19 +555,29 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
       _aliControllers.every((c) => _valido(c.text, 3, 35)) &&
       _intControllers.every((c) => _valido(c.text, 3, 35));
  
-  void _guardar() {
+  Future<void> _guardar() async {
     setState(() => _formularioFueEnviado = true);
-    if (!_todoValido) return;
-    Navigator.pop(
-      context,
-      _ResultadoAlergias(
-        medicamentos: _medControllers.map((c) => c.text.trim()).toList(),
-        alimentos: _aliControllers.map((c) => c.text.trim()).toList(),
-        intolerancias: _intControllers.map((c) => c.text.trim()).toList(),
-      ),
-    );
+    if (!_todoValido || _enviando) return;
+
+    setState(() => _enviando = true);
+    try {
+      await widget.onEnviar(
+        _ResultadoAlergias(
+          medicamentos: _medControllers.map((c) => c.text.trim()).toList(),
+          alimentos: _aliControllers.map((c) => c.text.trim()).toList(),
+          intolerancias: _intControllers.map((c) => c.text.trim()).toList(),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.mensaje), behavior: SnackBarBehavior.floating));
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
   }
- 
+
   Widget _bloque(String titulo, List<TextEditingController> controllers, int max, int min, int maxCar, String hint, VoidCallback onAgregar) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,9 +633,11 @@ class _EditarAlergiasScreenState extends State<_EditarAlergiasScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: _guardar,
+              onPressed: _enviando ? null : _guardar,
               style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-              child: const Text('Enviar cambios para aprobación'),
+              child: _enviando
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Enviar cambios para aprobación'),
             ),
           ],
         ),
@@ -625,13 +673,13 @@ class _EditarContactosScreenState extends State<_EditarContactosScreen> {
  
     setState(() => _guardando = true);
     try {
-      final guardados = await FamiliarService.actualizarContactos(
+      await FamiliarService.proponerCambioContactos(
         widget.adultoMayorId,
         _contactos.map((c) => ContactoEmergenciaInfo(nombre: c.nombre.text.trim(), telefono: c.telefono.text.trim(), relacion: c.relacion!)).toList(),
       );
       if (!mounted) return;
-      Navigator.pop(context, guardados);
-    } on ErrorContactos catch (e) {
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.mensaje), behavior: SnackBarBehavior.floating));
     } finally {
@@ -718,7 +766,7 @@ class _EditarContactosScreenState extends State<_EditarContactosScreen> {
               style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
               child: _guardando
                   ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Guardar cambios'),
+                  : const Text('Enviar cambios para aprobación'),
             ),
           ],
         ),
