@@ -3,6 +3,7 @@
 Variables de entorno (Render): BREVO_API_KEY, BREVO_REMITENTE_EMAIL, BREVO_REMITENTE_NOMBRE.
 Si falta la clave, no envía nada y no rompe la app.
 """
+import base64
 import html
 import json
 import os
@@ -13,17 +14,59 @@ import urllib.request
 URL_BREVO = "https://api.brevo.com/v3/smtp/email"
 
 
+def texto_a_html(texto):
+    """Texto escrito en el panel a HTML, respetando saltos de línea y líneas en blanco."""
+    limpio = (texto or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return html.escape(limpio).replace("\n", "<br>")
+
+
+# Adjuntos permitidos al enviar correos desde el panel.
+EXTENSIONES_ADJUNTO = {"pdf", "png", "jpg", "jpeg", "gif", "webp", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv"}
+MAX_ADJUNTOS = 5
+MAX_BYTES_ADJUNTOS = 3 * 1024 * 1024
+
+
+def preparar_adjuntos(adjuntos):
+    """Valida los archivos (nombre, tipo, peso) y los deja en el formato de Brevo. Lanza ValueError si algo no sirve."""
+    if not adjuntos:
+        return []
+    if len(adjuntos) > MAX_ADJUNTOS:
+        raise ValueError(f"Máximo {MAX_ADJUNTOS} archivos adjuntos")
+    total = 0
+    salida = []
+    for a in adjuntos:
+        nombre = os.path.basename((getattr(a, "nombre", "") or "").replace("\\", "/")).strip()[:100]
+        extension = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
+        if not nombre or extension not in EXTENSIONES_ADJUNTO:
+            raise ValueError(f"Tipo de archivo no permitido: {nombre or 'sin nombre'}")
+        try:
+            crudo = base64.b64decode(getattr(a, "contenido", "") or "", validate=True)
+        except Exception:
+            raise ValueError(f"No se pudo leer el archivo {nombre}")
+        if not crudo:
+            raise ValueError(f"El archivo {nombre} está vacío")
+        total += len(crudo)
+        if total > MAX_BYTES_ADJUNTOS:
+            raise ValueError("Los adjuntos pesan más de 3 MB en total")
+        salida.append({"name": nombre, "content": base64.b64encode(crudo).decode("ascii")})
+    return salida
+
+
 def correo_configurado() -> bool:
     return bool(os.getenv("BREVO_API_KEY") and os.getenv("BREVO_REMITENTE_EMAIL"))
 
 
-def _enviar(destinatario, asunto, cuerpo_html):
+def _enviar(destinatario, asunto, cuerpo_html, adjuntos=None, responder_a=None):
     cuerpo = {
         "sender": {"name": os.getenv("BREVO_REMITENTE_NOMBRE", "Mamoru"), "email": os.getenv("BREVO_REMITENTE_EMAIL")},
         "to": [{"email": destinatario}],
         "subject": asunto,
         "htmlContent": cuerpo_html,
     }
+    if adjuntos:
+        cuerpo["attachment"] = adjuntos
+    if responder_a:
+        cuerpo["replyTo"] = {"email": responder_a}
     peticion = urllib.request.Request(
         URL_BREVO,
         data=json.dumps(cuerpo).encode("utf-8"),
@@ -42,18 +85,19 @@ def _enviar(destinatario, asunto, cuerpo_html):
         return False, str(error)
 
 
-def enviar_correo(destinatario, asunto, cuerpo_html, esperar=False):
+def enviar_correo(destinatario, asunto, cuerpo_html, esperar=False, adjuntos=None, responder_a=None):
     """Envía en segundo plano (la app no espera a Brevo). Con esperar=True devuelve (ok, detalle)."""
     if not destinatario or not correo_configurado():
         return False, "Correo no configurado"
     if esperar:
-        return _enviar(destinatario, asunto, cuerpo_html)
-    threading.Thread(target=_enviar, args=(destinatario, asunto, cuerpo_html), daemon=True).start()
+        return _enviar(destinatario, asunto, cuerpo_html, adjuntos, responder_a)
+    threading.Thread(target=_enviar, args=(destinatario, asunto, cuerpo_html, adjuntos, responder_a), daemon=True).start()
     return True, ""
 
 
 def _plantilla(titulo, parrafos):
-    cuerpo = "".join(f"<p style='margin:0 0 12px;line-height:1.5'>{p}</p>" for p in parrafos)
+    # Un bloque que ya empieza con una etiqueta HTML se inserta tal cual; el resto va dentro de un párrafo.
+    cuerpo = "".join(p if p.startswith("<") else f"<p style='margin:0 0 12px;line-height:1.5'>{p}</p>" for p in parrafos)
     return (
         "<div style='font-family:Arial,sans-serif;color:#222;max-width:520px;margin:auto;padding:24px'>"
         f"<h2 style='color:#2f6f5e;margin:0 0 16px'>{titulo}</h2>{cuerpo}"
@@ -73,11 +117,13 @@ def correo_cuidador_aprobado(nombre):
 
 def correo_cuidador_rechazado(nombre, motivo):
     n = html.escape(nombre or "")
-    m = html.escape(motivo or "No se indicó un motivo.")
+    m = texto_a_html(motivo or "No se indicó un motivo.")
     return "Revisión de tu perfil de cuidador", _plantilla(
         "Tu perfil no pudo ser aprobado",
         [f"Hola {n},", "Revisamos tu perfil de cuidador en Mamoru y por ahora no pudimos aprobarlo.",
-         f"<b>Motivo:</b> {m}", "Puedes corregir lo indicado desde la app y volver a enviarlo para una nueva revisión."],
+         "<p style='margin:0 0 6px'><b>Motivo:</b></p>"
+         f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #c0392b;line-height:1.5'>{m}</div>",
+         "Puedes corregir lo indicado desde la app y volver a enviarlo para una nueva revisión."],
     )
 
 
@@ -89,4 +135,24 @@ def correo_codigo_verificacion(nombre, codigo, minutos):
         [f"Hola {n},", "Usa este código para confirmar tu correo y terminar de crear tu cuenta en Mamoru:",
          f"<p style='font-size:34px;letter-spacing:10px;font-weight:bold;text-align:center;margin:18px 0;color:#2f6f5e'>{c}</p>",
          f"El código vence en {minutos} minutos. Si tú no creaste una cuenta en Mamoru, ignora este mensaje."],
+    )
+
+
+def correo_mensaje_equipo(nombre_destino, mensaje, nombre_admin):
+    n = html.escape(nombre_destino or "")
+    a = html.escape(nombre_admin or "el equipo")
+    return _plantilla(
+        "Mensaje del equipo de Mamoru",
+        [f"Hola {n},",
+         f"<div style='margin:0 0 14px;line-height:1.5'>{texto_a_html(mensaje)}</div>",
+         f"<p style='font-size:12px;color:#777;margin:0 0 12px'>Enviado por {a}, del equipo de Mamoru. Puedes responder a este correo.</p>"],
+    )
+
+
+def correo_aviso_equipo(nombre, mensaje):
+    n = html.escape(nombre or "")
+    return "Aviso de Mamoru", _plantilla(
+        "Nuevo aviso en el panel",
+        [f"Hola {n},", f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #2f6f5e;line-height:1.5'>{texto_a_html(mensaje)}</div>",
+         "Entra al panel para revisarlo. Puedes desactivar estos correos en Configuración → Notificaciones."],
     )

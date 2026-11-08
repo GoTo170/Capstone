@@ -105,9 +105,15 @@ class PerfilCuidadorOut(BaseModel):
 
 
 
+class AdjuntoIn(BaseModel):
+    nombre: str
+    contenido: str  # archivo en base64
+
+
 class PerfilCuidadorUpdate(BaseModel):
     estado_validacion: str
     motivo_rechazo: Optional[str] = None
+    adjuntos: Optional[List[AdjuntoIn]] = None  # solo se usan al rechazar (van en el correo)
 
 
 
@@ -788,3 +794,14 @@ class VerificarCorreoIn(BaseModel):
 
 class ReenviarCodigoIn(BaseModel):
     email: EmailStr
+
+
+class EnviarCorreoIn(BaseModel):
+    usuario_id: UUID
+    asunto: str
+    mensaje: str
+    adjuntos: Optional[List[AdjuntoIn]] = None
+
+
+class AvisosCorreoCambio(BaseModel):
+    activo: bool

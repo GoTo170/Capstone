@@ -214,6 +214,14 @@ def ajustes_notificacion_de(db, usuario) -> dict:
     }
 
 
+def _quiere_correo(db, admin):
+    """True si este administrador activó recibir sus avisos también por correo."""
+    if not admin.email:
+        return False
+    fila = db.query(models.AjusteNotificacion).filter(models.AjusteNotificacion.usuario_id == admin.id).first()
+    return bool(_preferencias_guardadas(fila).get("correo", False))
+
+
 def notificar_administradores(db, tipo, mensaje):
     """Avisa al equipo: solo a quien tiene el permiso de la categoría y no la apagó."""
     administradores = db.query(models.Usuario).filter(
@@ -221,11 +229,17 @@ def notificar_administradores(db, tipo, mensaje):
         models.Usuario.activo.is_not(False),
     ).all()
     clave = _categoria_de_tipo(tipo)
+    por_correo = []
     for admin in administradores:
         if clave is not None and not ajustes_notificacion_de(db, admin).get(clave, False):
             continue
         db.add(models.Notificacion(usuario_id=admin.id, tipo=tipo, mensaje=mensaje))
+        if _quiere_correo(db, admin):
+            por_correo.append((admin.email, admin.nombre))
     db.commit()
+    for email_admin, nombre_admin in por_correo:
+        asunto, cuerpo = correo.correo_aviso_equipo(nombre_admin, mensaje)
+        correo.enviar_correo(email_admin, asunto, cuerpo)
 
 
 def generar_codigo(longitud: int = 6) -> str:
@@ -297,6 +311,40 @@ def cuidador_tiene_acceso(db, cuidador_usuario_id, adulto_mayor_id) -> bool:
 @app.get("/")
 def inicio():
     return {"mensaje": "Mamoru API funcionando"}
+
+
+@app.post("/admin/enviar-correo")
+def enviar_correo_a_usuario(
+    datos: schemas.EnviarCorreoIn,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_permiso("usuarios")),
+):
+    """El equipo escribe a un usuario desde el panel. Las respuestas llegan al correo del administrador."""
+    if not correo.correo_configurado():
+        raise HTTPException(status_code=503, detail="El correo no está configurado en el servidor")
+    destino = db.query(models.Usuario).filter(models.Usuario.id == datos.usuario_id).first()
+    if not destino or not destino.email:
+        raise HTTPException(status_code=400, detail="Este usuario no tiene un correo al que escribir")
+    asunto = (datos.asunto or "").strip()
+    mensaje = (datos.mensaje or "").strip()
+    if not asunto or len(asunto) > 150:
+        raise HTTPException(status_code=400, detail="Escribe un asunto (máximo 150 caracteres)")
+    if not mensaje or len(mensaje) > 5000:
+        raise HTTPException(status_code=400, detail="Escribe un mensaje (máximo 5000 caracteres)")
+    try:
+        adjuntos = correo.preparar_adjuntos(datos.adjuntos)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    cuerpo = correo.correo_mensaje_equipo(destino.nombre, mensaje, admin_actual.nombre)
+    ok, detalle = correo.enviar_correo(
+        destino.email, asunto, cuerpo, esperar=True,
+        adjuntos=adjuntos or None, responder_a=admin_actual.email,
+    )
+    if not ok:
+        raise HTTPException(status_code=502, detail=f"No se pudo enviar el correo: {detalle}")
+    registrar_auditoria(db, admin_actual.id, "Envió un correo a un usuario", "usuario", destino.id, asunto)
+    return {"enviado_a": destino.email}
 
 
 @app.post("/admin/correo-prueba")
@@ -709,6 +757,34 @@ def cambiar_ajuste_notificacion(
     return {"clave": datos.clave, "activa": datos.activa}
 
 
+@app.get("/perfil/avisos-correo")
+def ver_avisos_correo(
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    fila = db.query(models.AjusteNotificacion).filter(models.AjusteNotificacion.usuario_id == admin_actual.id).first()
+    return {"activo": bool(_preferencias_guardadas(fila).get("correo", False)), "email": admin_actual.email}
+
+
+@app.patch("/perfil/avisos-correo")
+def cambiar_avisos_correo(
+    datos: schemas.AvisosCorreoCambio,
+    db: Session = Depends(get_db),
+    admin_actual: models.Usuario = Depends(requerir_administrador),
+):
+    if datos.activo and not admin_actual.email:
+        raise HTTPException(status_code=400, detail="Tu cuenta no tiene un correo para recibir los avisos")
+    fila = db.query(models.AjusteNotificacion).filter(models.AjusteNotificacion.usuario_id == admin_actual.id).first()
+    guardado = _preferencias_guardadas(fila)
+    guardado["correo"] = datos.activo
+    if fila is None:
+        db.add(models.AjusteNotificacion(usuario_id=admin_actual.id, datos=json.dumps(guardado)))
+    else:
+        fila.datos = json.dumps(guardado)
+    db.commit()
+    return {"activo": datos.activo, "email": admin_actual.email}
+
+
 @app.post("/logout")
 def logout(
     db: Session = Depends(get_db),
@@ -822,12 +898,17 @@ def actualizar_estado_cuidador(
     if db.query(models.VerificacionCorreo).filter(models.VerificacionCorreo.usuario_id == perfil.usuario_id).first():
         raise HTTPException(status_code=400, detail="Este cuidador aún no verificó su correo")
 
+    adjuntos_correo = []
     motivo = (datos.motivo_rechazo or "").strip()
     if datos.estado_validacion == "rechazado":
         if not motivo:
             raise HTTPException(status_code=400, detail="Escribe el motivo del rechazo")
-        if len(motivo) > 300:
-            raise HTTPException(status_code=400, detail="El motivo es demasiado largo (máximo 300 caracteres)")
+        if len(motivo) > 1000:
+            raise HTTPException(status_code=400, detail="El motivo es demasiado largo (máximo 1000 caracteres)")
+        try:
+            adjuntos_correo = correo.preparar_adjuntos(datos.adjuntos)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
     else:
         motivo = ""  # al aprobar o volver a pendiente se borra un motivo anterior
  
@@ -856,7 +937,7 @@ def actualizar_estado_cuidador(
                 asunto, cuerpo = correo.correo_cuidador_aprobado(cuidador.nombre)
             else:
                 asunto, cuerpo = correo.correo_cuidador_rechazado(cuidador.nombre, motivo)
-            correo.enviar_correo(cuidador.email, asunto, cuerpo)
+            correo.enviar_correo(cuidador.email, asunto, cuerpo, adjuntos=adjuntos_correo or None)
 
     if datos.estado_validacion == "aprobado":
         accion = "Aprobó cuidador"
