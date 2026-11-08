@@ -14,7 +14,12 @@ async function marcarLeidas() {
   }
 }
 
-export default function Notificaciones() {
+interface Props {
+  // Se llama cuando llega un aviso que antes no estaba (para que las páginas se actualicen solas).
+  onNuevas?: () => void
+}
+
+export default function Notificaciones({ onNuevas }: Props) {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([])
   const [cargadas, setCargadas] = useState(false)
   const [abierto, setAbierto] = useState(false)
@@ -22,6 +27,13 @@ export default function Notificaciones() {
   const contenedor = useRef<HTMLDivElement>(null)
   // Para que la actualización automática sepa si la lista está abierta en ese momento.
   const abiertoRef = useRef(false)
+  const alNuevasRef = useRef(onNuevas)
+  // Avisos ya vistos; null hasta la primera carga (lo que ya estaba al entrar no cuenta como nuevo).
+  const vistasRef = useRef<Set<string> | null>(null)
+
+  useEffect(() => {
+    alNuevasRef.current = onNuevas
+  }, [onNuevas])
 
   useEffect(() => {
     abiertoRef.current = abierto
@@ -38,6 +50,10 @@ export default function Notificaciones() {
           .sort((a, b) => new Date(b.fecha_envio).getTime() - new Date(a.fecha_envio).getTime())
           .slice(0, 8)
         setNotificaciones(recientes)
+
+        const hayNuevas = vistasRef.current !== null && recientes.some((n) => !vistasRef.current?.has(n.id))
+        vistasRef.current = new Set(recientes.map((n) => n.id))
+        if (hayNuevas) alNuevasRef.current?.()
 
         const hayNoLeidas = recientes.some((n) => !n.leida)
         if (hayNoLeidas && abiertoRef.current) {

@@ -8,6 +8,8 @@ import { apiFetch, obtenerUsuarioSesion, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFecha, formatearFechaCompleta, nombreCompleto } from '../lib/formato'
 import { usePaginacion } from '../lib/usePaginacion'
+import { useVersionDatos } from '../lib/datosVivos'
+import ModalEnviarCorreo from '../components/ModalEnviarCorreo'
  
 interface Filtros {
   rol: string
@@ -56,6 +58,8 @@ export default function Usuarios() {
   const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS)
   const [accion, setAccion] = useState<Accion | null>(null)
   const [procesando, setProcesando] = useState(false)
+  const [correoPara, setCorreoPara] = useState<Usuario | null>(null)
+  const version = useVersionDatos()
  
   const miId = obtenerUsuarioSesion()?.id
  
@@ -73,7 +77,7 @@ export default function Usuarios() {
     return () => {
       activo = false
     }
-  }, [])
+  }, [version])
  
   function mostrarAviso(texto: string) {
     setAviso(texto)
@@ -114,6 +118,7 @@ export default function Usuarios() {
     if (usuario.email) {
       const correo = usuario.email
       opciones.push({ texto: 'Copiar correo', onClick: () => copiarCorreo(correo) })
+      opciones.push({ texto: 'Enviar correo', onClick: () => setCorreoPara(usuario) })
     }
  
     if (usuario.activo) {
@@ -272,6 +277,10 @@ export default function Usuarios() {
  
       <Paginacion pag={pag} />
  
+      {correoPara && (
+        <ModalEnviarCorreo usuario={correoPara} onCerrar={() => setCorreoPara(null)} onEnviado={mostrarAviso} />
+      )}
+
       {accion?.tipo === 'detalle' && (
         <Modal
           titulo="Detalles del usuario"

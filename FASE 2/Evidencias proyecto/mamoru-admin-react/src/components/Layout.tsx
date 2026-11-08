@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ETIQUETA_ROL_INTERNO,
@@ -13,6 +13,7 @@ import {
 import type { AlertaSOS, CambioAdulto, ContextoLayout, PerfilCuidador } from '../lib/tipos'
 import { useTheme } from '../lib/useTheme'
 import Notificaciones from './Notificaciones'
+import { VersionDatosContext } from '../lib/datosVivos'
 
 interface Enlace {
   to: string
@@ -46,6 +47,17 @@ export default function Layout() {
   const [pendientes, setPendientes] = useState(0)
   const [sosActivas, setSosActivas] = useState(0)
   const [cambiosPendientes, setCambiosPendientes] = useState(0)
+  // Sube cuando llega algo nuevo; las páginas lo usan para volver a pedir sus datos solas.
+  const [versionDatos, setVersionDatos] = useState(0)
+  const primeraLectura = useRef(true)
+
+  useEffect(() => {
+    if (primeraLectura.current) {
+      primeraLectura.current = false
+      return
+    }
+    setVersionDatos((v) => v + 1)
+  }, [pendientes, sosActivas, cambiosPendientes])
 
   const puedeCuidadores = tienePermiso(usuario, 'cuidadores')
   const puedeSoporte = tienePermiso(usuario, 'soporte')
@@ -124,7 +136,7 @@ export default function Layout() {
           <div className="titulo-panel">Panel Administrativo Mamoru</div>
 
           <div className="header-right">
-            <Notificaciones />
+            <Notificaciones onNuevas={() => setVersionDatos((v) => v + 1)} />
 
             <button className="icon-btn" onClick={alternar} title="Cambiar tema">
               {tema === 'dark' ? (
@@ -171,7 +183,9 @@ export default function Layout() {
       </header>
 
       <main className="content">
-        <Outlet context={contexto} />
+        <VersionDatosContext.Provider value={versionDatos}>
+          <Outlet context={contexto} />
+        </VersionDatosContext.Provider>
       </main>
     </>
   )

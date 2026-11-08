@@ -1629,3 +1629,26 @@ body {
   color: var(--accent, inherit);
   text-decoration: underline;
 }
+
+/* etapa54: tarjetas de Cuidadores ordenadas, adjuntos y correo desde el panel */
+.card-grid { align-items: stretch; }
+.cg-card { display: flex; flex-direction: column; }
+.cg-card .cg-pie { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.cg-card .cg-pie .cg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+.cg-card .cg-pie .cg-actions .btn { width: 100%; white-space: nowrap; justify-content: center; text-align: center; padding-left: 8px; padding-right: 8px; }
+.cg-card .cg-pie .enlace-documento { grid-column: 1 / -1; }
+
+.campo-correo { margin-bottom: 14px; }
+.campo-correo > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink-faint); }
+.campo-correo-valor { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 13px; word-break: break-all; }
+.campo-correo input[type='text'],
+.campo-correo textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font-family: inherit; font-size: 13px; box-sizing: border-box; }
+.campo-correo textarea { resize: vertical; min-height: 120px; }
+
+.adjuntos-cabecera { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.adjuntos-error { color: #e5645a; font-size: 12px; margin-top: 6px; }
+.adjuntos-lista { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.adjuntos-lista li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.adjunto-nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adjunto-quitar { border: none; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 14px; padding: 2px 6px; }
+.adjunto-quitar:hover { color: #e5645a; }

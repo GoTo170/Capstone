@@ -3,6 +3,7 @@ import BarraBusqueda from '../components/BarraBusqueda'
 import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch, type Usuario } from '../lib/api'
+import { useVersionDatos } from '../lib/datosVivos'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaHora, formatearFechaIso, formatearHora, nombreCompleto } from '../lib/formato'
 import type { PerfilCuidador, SolicitudServicio } from '../lib/tipos'
@@ -70,6 +71,7 @@ function textoMotivo(s: SolicitudServicio): string | null {
 }
 
 export default function Solicitudes() {
+  const version = useVersionDatos()
   const [datos, setDatos] = useState<DatosSolicitudes | null>(null)
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
@@ -93,7 +95,7 @@ export default function Solicitudes() {
     return () => {
       activo = false
     }
-  }, [])
+  }, [version])
 
   const solicitudes = datos?.solicitudes ?? []
   const usuarioPorId = new Map((datos?.usuarios ?? []).map((u) => [u.id, u]))

@@ -8,6 +8,9 @@ import { apiFetch, type Usuario } from '../lib/api'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaCompleta, nombreCompleto } from '../lib/formato'
 import { usePaginacion } from '../lib/usePaginacion'
+import { useVersionDatos } from '../lib/datosVivos'
+import { archivosABase64, type AdjuntoEnvio } from '../lib/adjuntos'
+import SelectorAdjuntos from '../components/SelectorAdjuntos'
 import type { ContextoLayout, DocumentoEnlace, PerfilCuidador } from '../lib/tipos'
 
 type Pestana = 'aprobado' | 'pendiente' | 'rechazado' | 'puertas'
@@ -135,6 +138,9 @@ function cumple(
     if (!perfil.puertas_adentro_pendiente) return false
   } else if (perfil.estado_validacion !== pestana) {
     return false
+  } else if (pestana === 'aprobado' && perfil.puertas_adentro_pendiente) {
+    // Con una solicitud de puertas adentro por resolver, se revisa en esa pestaña y vuelve aquí al resolverla.
+    return false
   }
 
   if (f.areaSalud === 'si' && !perfil.es_area_salud) return false
@@ -153,6 +159,7 @@ function cumple(
 
 export default function Cuidadores() {
   const { refrescarPendientes } = useOutletContext<ContextoLayout>()
+  const version = useVersionDatos()
   const [cuidadores, setCuidadores] = useState<PerfilCuidador[] | null>(null)
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [error, setError] = useState('')
@@ -163,6 +170,7 @@ export default function Cuidadores() {
   const [accionPuertas, setAccionPuertas] = useState<AccionPuertas | null>(null)
   const [motivo, setMotivo] = useState('')
   const [rechazo, setRechazo] = useState<AccionRechazo | null>(null)
+  const [archivosRechazo, setArchivosRechazo] = useState<File[]>([])
   const [detalle, setDetalle] = useState<DetalleRechazo | null>(null)
   // Qué documento se está pidiendo y para qué: cada botón muestra su propio "cargando".
   const [documentoCargando, setDocumentoCargando] = useState<{ id: string; accion: 'ver' | 'descargar' } | null>(null)
@@ -185,24 +193,37 @@ export default function Cuidadores() {
     return () => {
       activo = false
     }
-  }, [])
+    // Se repite cuando el panel detecta algo nuevo (aviso en la campana o cambio en los contadores).
+  }, [version])
 
   function reemplazar(actualizado: PerfilCuidador) {
     setCuidadores((prev) => (prev ? prev.map((c) => (c.id === actualizado.id ? actualizado : c)) : prev))
     refrescarPendientes()
   }
 
-  async function cambiarEstado(id: string, nuevoEstado: 'aprobado' | 'rechazado', motivoRechazo?: string) {
+  // Devuelve true si el cambio se guardó (así el cuadro de rechazo solo se cierra cuando salió bien).
+  async function cambiarEstado(
+    id: string,
+    nuevoEstado: 'aprobado' | 'rechazado',
+    motivoRechazo?: string,
+    adjuntos?: AdjuntoEnvio[],
+  ): Promise<boolean> {
     setProcesando(id)
     setError('')
     try {
       const actualizado = await apiFetch<PerfilCuidador>(`/cuidadores/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ estado_validacion: nuevoEstado, motivo_rechazo: motivoRechazo ?? null }),
+        body: JSON.stringify({
+          estado_validacion: nuevoEstado,
+          motivo_rechazo: motivoRechazo ?? null,
+          adjuntos: adjuntos ?? [],
+        }),
       })
       reemplazar(actualizado)
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al actualizar el cuidador')
+      return false
     } finally {
       setProcesando(null)
     }
@@ -242,6 +263,8 @@ export default function Cuidadores() {
 
   function abrirRechazo(perfil: PerfilCuidador, nombre: string) {
     setMotivo('')
+    setArchivosRechazo([])
+    setError('')
     setRechazo({ perfil, nombre })
   }
 
@@ -249,9 +272,18 @@ export default function Cuidadores() {
     if (!rechazo) return
     const texto = motivo.trim()
     if (!texto) return
-    await cambiarEstado(rechazo.perfil.id, 'rechazado', texto)
+    let adjuntos: AdjuntoEnvio[] = []
+    try {
+      adjuntos = await archivosABase64(archivosRechazo)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo leer un archivo adjunto')
+      return
+    }
+    const guardado = await cambiarEstado(rechazo.perfil.id, 'rechazado', texto, adjuntos)
+    if (!guardado) return
     setRechazo(null)
     setMotivo('')
+    setArchivosRechazo([])
   }
 
   function abrirDetalle(perfil: PerfilCuidador, usuario: Usuario | undefined, nombre: string) {
@@ -446,91 +478,95 @@ export default function Cuidadores() {
 
                 {c.estado_validacion === 'rechazado' && <div className="cell-sub">Haz clic para ver el motivo</div>}
 
-                {c.documento_url ? (
-                  <div
-                    className="cg-actions"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      className="btn"
-                      disabled={documentoCargando?.id === c.id}
-                      onClick={() => verDocumento(c, false)}
+                <div className="cg-pie">
+                  {c.documento_url ? (
+                    <div
+                      className="cg-actions"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
                     >
-                      {documentoCargando?.id === c.id && documentoCargando?.accion === 'ver' ? 'Abriendo…' : 'Ver documento'}
-                    </button>
-                    <button
-                      className="btn"
-                      disabled={documentoCargando?.id === c.id}
-                      onClick={() => verDocumento(c, true)}
-                    >
-                      {documentoCargando?.id === c.id && documentoCargando?.accion === 'descargar' ? 'Descargando…' : 'Descargar'}
-                    </button>
-                    {enlaceManual?.id === c.id && (
-                      <a className="enlace-documento" href={enlaceManual?.url} target="_blank" rel="noopener noreferrer">
-                        Abrir documento ↗
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  c.estado_validacion === 'pendiente' && (
-                    <span className="pill pending" style={{ alignSelf: 'flex-start' }}>
-                      Sin documento adjunto
-                    </span>
-                  )
-                )}
+                      <button
+                        className="btn"
+                        disabled={documentoCargando?.id === c.id}
+                        onClick={() => verDocumento(c, false)}
+                      >
+                        {documentoCargando?.id === c.id && documentoCargando?.accion === 'ver' ? 'Abriendo…' : 'Ver documento'}
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={documentoCargando?.id === c.id}
+                        onClick={() => verDocumento(c, true)}
+                      >
+                        {documentoCargando?.id === c.id && documentoCargando?.accion === 'descargar' ? 'Descargando…' : 'Descargar'}
+                      </button>
+                      {enlaceManual?.id === c.id && (
+                        <a className="enlace-documento" href={enlaceManual?.url} target="_blank" rel="noopener noreferrer">
+                          Abrir documento ↗
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    c.estado_validacion === 'pendiente' && (
+                      <span className="pill pending" style={{ alignSelf: 'flex-start' }}>
+                        Sin documento adjunto
+                      </span>
+                    )
+                  )}
 
-                {c.estado_validacion === 'aprobado' && !perfilCompleto(c, usuario) && (
-                  <span className="pill pending" style={{ alignSelf: 'flex-start' }}>
-                    Perfil incompleto · no visible para las familias
-                  </span>
-                )}
-
-                {c.puertas_adentro_pendiente && (
-                  <>
+                  {c.estado_validacion === 'aprobado' && !perfilCompleto(c, usuario) && (
                     <span className="pill pending" style={{ alignSelf: 'flex-start' }}>
-                      Solicita ofrecer puertas adentro
+                      Perfil incompleto · no visible para las familias
                     </span>
-                    {c.puertas_adentro_fecha_solicitud && (
-                      <div className="cell-sub">Solicitada: {formatearFechaCompleta(c.puertas_adentro_fecha_solicitud)}</div>
-                    )}
+                  )}
+
+                  {c.puertas_adentro_pendiente && (
+                    <>
+                      <span className="pill pending" style={{ alignSelf: 'flex-start' }}>
+                        Solicita ofrecer puertas adentro
+                      </span>
+                      {c.puertas_adentro_fecha_solicitud && (
+                        <div className="cell-sub">Solicitada: {formatearFechaCompleta(c.puertas_adentro_fecha_solicitud)}</div>
+                      )}
+                      <div className="cg-actions">
+                        <button
+                          className="btn primary"
+                          disabled={procesando === c.id}
+                          title="Aprobar la modalidad puertas adentro"
+                          onClick={() => abrirPuertas(c, nombre, true)}
+                        >
+                          Aprobar puertas
+                        </button>
+                        <button
+                          className="btn danger"
+                          disabled={procesando === c.id}
+                          title="Rechazar la modalidad puertas adentro"
+                          onClick={() => abrirPuertas(c, nombre, false)}
+                        >
+                          Rechazar puertas
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {c.estado_validacion === 'pendiente' && (
                     <div className="cg-actions">
                       <button
                         className="btn primary"
                         disabled={procesando === c.id}
-                        onClick={() => abrirPuertas(c, nombre, true)}
+                        onClick={() => cambiarEstado(c.id, 'aprobado')}
                       >
-                        Aprobar puertas adentro
+                        Aprobar
                       </button>
                       <button
                         className="btn danger"
                         disabled={procesando === c.id}
-                        onClick={() => abrirPuertas(c, nombre, false)}
+                        onClick={() => abrirRechazo(c, nombre)}
                       >
                         Rechazar
                       </button>
                     </div>
-                  </>
-                )}
-
-                {c.estado_validacion === 'pendiente' && (
-                  <div className="cg-actions">
-                    <button
-                      className="btn primary"
-                      disabled={procesando === c.id}
-                      onClick={() => cambiarEstado(c.id, 'aprobado')}
-                    >
-                      Aprobar
-                    </button>
-                    <button
-                      className="btn danger"
-                      disabled={procesando === c.id}
-                      onClick={() => abrirRechazo(c, nombre)}
-                    >
-                      Rechazar
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )
           })}
@@ -599,19 +635,32 @@ export default function Cuidadores() {
             </>
           }
         >
+          {error && (
+            <div className="auth-error" style={{ display: 'block', marginBottom: 12 }}>
+              {error}
+            </div>
+          )}
           <p style={{ marginBottom: 12 }}>
             ¿Rechazar el perfil de <b>{rechazo.nombre}</b>? Escribe el motivo: quedará registrado y podrás consultarlo en el apartado "Rechazados".
           </p>
           <textarea
-            style={estiloTextarea}
-            maxLength={300}
+            style={{ ...estiloTextarea, minHeight: 130 }}
+            maxLength={1000}
             placeholder="Motivo del rechazo (obligatorio)"
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
+            disabled={procesando !== null}
           />
           <div className="cell-sub" style={{ textAlign: 'right' }}>
-            {motivo.length}/300
+            {motivo.length}/1000
           </div>
+          <div className="cell-sub" style={{ marginBottom: 12 }}>
+            El cuidador recibirá este texto por correo tal como lo escribas, con tus saltos de línea.
+          </div>
+          <p style={{ marginBottom: 6 }}>
+            <b>Archivos adjuntos</b> (opcional)
+          </p>
+          <SelectorAdjuntos archivos={archivosRechazo} onCambio={setArchivosRechazo} deshabilitado={procesando !== null} />
         </Modal>
       )}
 

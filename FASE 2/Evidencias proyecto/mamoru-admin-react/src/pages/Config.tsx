@@ -21,11 +21,17 @@ interface AjusteNotificacion {
   activa: boolean
 }
 
+interface AvisoCorreo {
+  activo: boolean
+  email: string | null
+}
+
 export default function Config() {
   const [usuarios, setUsuarios] = useState<Usuario[] | null>(null)
   const [error, setError] = useState('')
   const [ajustes, setAjustes] = useState<AjusteNotificacion[] | null>(null)
   const [errorAjustes, setErrorAjustes] = useState('')
+  const [avisoCorreo, setAvisoCorreo] = useState<AvisoCorreo | null>(null)
   const [nuevoAbierto, setNuevoAbierto] = useState(false)
   const [cambioRol, setCambioRol] = useState<{ usuario: Usuario; nuevo: string } | null>(null)
   const [guardandoRol, setGuardandoRol] = useState(false)
@@ -66,6 +72,37 @@ export default function Config() {
       activo = false
     }
   }, [])
+
+  useEffect(() => {
+    let activo = true
+    apiFetch<AvisoCorreo>('/perfil/avisos-correo')
+      .then((dato) => {
+        if (activo) setAvisoCorreo(dato)
+      })
+      .catch((e: unknown) => {
+        if (activo) setErrorAjustes(e instanceof Error ? e.message : 'No se pudo cargar el aviso por correo')
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
+
+  async function alternarCorreo() {
+    if (!avisoCorreo) return
+    const nuevo = !avisoCorreo.activo
+    setErrorAjustes('')
+    setAvisoCorreo({ ...avisoCorreo, activo: nuevo })
+    try {
+      const guardado = await apiFetch<AvisoCorreo>('/perfil/avisos-correo', {
+        method: 'PATCH',
+        body: JSON.stringify({ activo: nuevo }),
+      })
+      setAvisoCorreo(guardado)
+    } catch (e) {
+      setAvisoCorreo({ ...avisoCorreo, activo: !nuevo })
+      setErrorAjustes(e instanceof Error ? e.message : 'No se pudo guardar el cambio')
+    }
+  }
 
   async function alternar(clave: string) {
     const actual = ajustes?.find((a) => a.clave === clave)
@@ -147,14 +184,22 @@ export default function Config() {
               ></button>
             </div>
           ))}
-          <div className="setting-row proximamente">
+          <div className="setting-row">
             <div>
-              <div className="setting-label">
-                Avisos por correo <span className="etiqueta-pronto">Próximamente</span>
+              <div className="setting-label">Avisos por correo</div>
+              <div className="setting-desc">
+                {avisoCorreo?.email
+                  ? `Además de la campana, te enviamos cada aviso activado arriba a ${avisoCorreo.email}.`
+                  : 'Tu cuenta no tiene un correo registrado para recibir avisos.'}
               </div>
-              <div className="setting-desc">Recibir estos mismos avisos en tu correo y un resumen semanal.</div>
             </div>
-            <button className="toggle" disabled aria-label="Avisos por correo (próximamente)"></button>
+            <button
+              className={avisoCorreo?.activo ? 'toggle on' : 'toggle'}
+              onClick={alternarCorreo}
+              disabled={!avisoCorreo || !avisoCorreo.email}
+              aria-label="Avisos por correo"
+              aria-pressed={avisoCorreo?.activo ?? false}
+            ></button>
           </div>
         </div>
       </div>

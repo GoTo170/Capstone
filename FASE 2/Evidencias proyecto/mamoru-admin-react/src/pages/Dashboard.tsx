@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch, obtenerUsuarioSesion, tienePermiso, type Usuario } from '../lib/api'
+import { useVersionDatos } from '../lib/datosVivos'
 import { formatearFechaHora } from '../lib/formato'
 import type { AlertaSOS, PerfilCuidador, RegistroAuditoria, SolicitudServicio } from '../lib/tipos'
 
@@ -37,6 +38,7 @@ export default function Dashboard() {
   const puedeAuditoria = tienePermiso(usuarioSesion, 'auditoria')
   const puedeSoporte = tienePermiso(usuarioSesion, 'soporte')
 
+  const version = useVersionDatos()
   const [datos, setDatos] = useState<DatosDashboard | null>(null)
   const [error, setError] = useState('')
 
@@ -60,7 +62,7 @@ export default function Dashboard() {
     return () => {
       activo = false
     }
-  }, [puedeAuditoria])
+  }, [puedeAuditoria, version])
 
   const { usuarios, cuidadores, solicitudes, alertas, auditoria } = datos ?? VACIO
   const valor = (n: number) => (datos ? n : '—')

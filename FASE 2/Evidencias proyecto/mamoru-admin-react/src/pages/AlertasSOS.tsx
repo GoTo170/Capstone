@@ -5,6 +5,7 @@ import Modal from '../components/Modal'
 import Paginacion from '../components/Paginacion'
 import PanelFiltros from '../components/PanelFiltros'
 import { apiFetch } from '../lib/api'
+import { useVersionDatos } from '../lib/datosVivos'
 import { contiene } from '../lib/busqueda'
 import { diaLocal, formatearFechaCompleta } from '../lib/formato'
 import type { AlertaSOSPanel, ContextoLayout } from '../lib/tipos'
@@ -55,6 +56,7 @@ function cumple(alerta: AlertaSOSPanel, estado: Estado, busqueda: string, f: Fil
 
 export default function AlertasSOS() {
   const { refrescarSOS } = useOutletContext<ContextoLayout>()
+  const version = useVersionDatos()
   const [alertas, setAlertas] = useState<AlertaSOSPanel[] | null>(null)
   const [error, setError] = useState('')
   const [estado, setEstado] = useState<Estado>('activa')
@@ -77,7 +79,7 @@ export default function AlertasSOS() {
     cargar()
     const temporizador = setInterval(cargar, SEGUNDOS_ACTUALIZACION * 1000)
     return () => clearInterval(temporizador)
-  }, [cargar])
+  }, [cargar, version])
 
   async function confirmar() {
     if (!accion) return

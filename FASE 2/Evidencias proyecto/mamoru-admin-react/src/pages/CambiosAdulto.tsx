@@ -4,6 +4,7 @@ import BarraBusqueda from '../components/BarraBusqueda'
 import Modal from '../components/Modal'
 import Paginacion from '../components/Paginacion'
 import { apiFetch } from '../lib/api'
+import { useVersionDatos } from '../lib/datosVivos'
 import { contiene } from '../lib/busqueda'
 import { formatearFechaCompleta } from '../lib/formato'
 import { usePaginacion } from '../lib/usePaginacion'
@@ -148,6 +149,7 @@ function ColumnaContactos({ titulo, datos }: { titulo: string; datos: Record<str
 
 export default function CambiosAdulto() {
   const { refrescarPendientes } = useOutletContext<ContextoLayout>()
+  const version = useVersionDatos()
   const [cambios, setCambios] = useState<CambioAdulto[] | null>(null)
   const [error, setError] = useState('')
   const [pestana, setPestana] = useState<Pestana>('pendiente')
@@ -168,7 +170,7 @@ export default function CambiosAdulto() {
     return () => {
       activo = false
     }
-  }, [])
+  }, [version])
 
   function abrir(cambio: CambioAdulto, aprobar: boolean) {
     setMotivo('')
