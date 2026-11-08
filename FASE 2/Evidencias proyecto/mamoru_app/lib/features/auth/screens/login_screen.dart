@@ -13,6 +13,7 @@ import 'cuenta_pendiente_validacion_screen.dart';
 import 'escanear_invitacion_screen.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
+import 'verificar_codigo_registro_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -100,6 +101,21 @@ class _LoginScreenState extends State<LoginScreen> {
       AuthService.cerrarSesion();
 
       if (!mounted) return;
+
+      // Cuenta creada pero con el correo sin verificar: se lleva a escribir el código.
+      if (e.codigo == 403 && e.mensaje.contains('verificar tu correo')) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VerificarCodigoRegistroScreen(
+              email: _emailController.text.trim(),
+              rol: '',
+              reenviarAlAbrir: true,
+            ),
+          ),
+        );
+        return;
+      }
 
       _mostrarMensaje(e.mensaje);
     } finally {

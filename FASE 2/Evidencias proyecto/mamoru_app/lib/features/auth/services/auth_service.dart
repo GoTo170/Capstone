@@ -30,7 +30,8 @@ class AuthService {
     return usuario;
   }
  
-  /// Crea una cuenta de familiar o cuidador.
+  /// Crea una cuenta de familiar o cuidador. El servidor envía un código de
+  /// verificación al correo: la cuenta no puede iniciar sesión hasta confirmarlo.
   static Future<void> registrar({
     required String nombre,
     required String apellido,
@@ -59,6 +60,20 @@ class AuthService {
     }
  
     await ApiClient.post('/usuarios', cuerpo);
+  }
+ 
+  /// Confirma el correo con el código de 6 dígitos. Devuelve el rol de la cuenta.
+  static Future<String> verificarCorreo(String email, String codigo) async {
+    final datos = await ApiClient.post('/verificar-correo', {
+      'email': email,
+      'codigo': codigo,
+    }) as Map<String, dynamic>;
+    return (datos['rol'] ?? '') as String;
+  }
+ 
+  /// Pide un código nuevo para un correo que todavía no está verificado.
+  static Future<void> reenviarCodigo(String email) async {
+    await ApiClient.post('/reenviar-codigo', {'email': email});
   }
  
   /// El adulto mayor entra con el código de invitación (sin correo ni clave).
@@ -109,4 +124,3 @@ class AuthService {
  
   static void cerrarSesion() => Sesion.cerrar();
 }
- 

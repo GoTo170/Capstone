@@ -1,16 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/api_exception.dart';
+import '../services/auth_service.dart';
+import '../services/documento_cuidador_service.dart';
+
 import 'cuenta_pendiente_validacion_screen.dart';
 
 class VerificarCodigoRegistroScreen extends StatefulWidget {
   final String email;
+
+  /// 'familiar' o 'cuidador'. Si viene vacío (se llegó desde el login), se usa el que informa el servidor.
   final String rol;
+
+  /// Se ejecuta apenas el correo queda verificado (el cuidador sube aquí su documento).
+  final Future<void> Function()? alVerificar;
+
+  /// Pide un código nuevo al abrir la pantalla (cuando se llega desde el login).
+  final bool reenviarAlAbrir;
 
   const VerificarCodigoRegistroScreen({
     super.key,
     required this.email,
     required this.rol,
+    this.alVerificar,
+    this.reenviarAlAbrir = false,
   });
 
   @override
@@ -27,6 +41,21 @@ class _VerificarCodigoRegistroScreenState
 
   bool _verificando = false;
   bool _reenviando = false;
+
+  bool _verificado = false;
+  bool _documentoListo = false;
+  String _rolFinal = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _rolFinal = widget.rol;
+    if (widget.reenviarAlAbrir) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reenviarCodigo(silencioso: true);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -63,48 +92,52 @@ class _VerificarCodigoRegistroScreenState
       return;
     }
 
+    if (_verificando) return;
+
     setState(() {
       _verificando = true;
     });
 
-    // TODO:
-    // Posteriormente se llamará al backend FastAPI.
-    //
-    // Se debería enviar:
-    //
-    // email: widget.email
-    // codigo: _codigoController.text.trim()
-    //
-    // El backend deberá validar:
-    // 1. Que el código exista.
-    // 2. Que pertenezca al correo.
-    // 3. Que no haya expirado.
-    // 4. Que no haya sido utilizado anteriormente.
+    try {
+      if (!_verificado) {
+        final rolServidor = await AuthService.verificarCorreo(
+          widget.email,
+          _codigoController.text.trim(),
+        );
+        _verificado = true;
+        if (_rolFinal.trim().isEmpty) _rolFinal = rolServidor;
+      }
 
-    await Future.delayed(
-      const Duration(milliseconds: 800),
-    );
+      // El cuidador sube su documento recién cuando el correo ya está verificado.
+      if (widget.alVerificar != null && !_documentoListo) {
+        await widget.alVerificar!();
+        _documentoListo = true;
+      }
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _verificando = false;
-    });
+      final rol = _rolFinal.trim().toLowerCase();
 
-    // -------------------------------------------------
-    // POR AHORA SIMULAMOS QUE EL CÓDIGO ES CORRECTO.
-    // -------------------------------------------------
-
-    final rol = widget.rol.trim().toLowerCase();
-
-    if (rol == 'cuidador') {
-      _irAPendienteValidacion();
-    } else if (rol == 'familiar') {
-      _registroFamiliarExitoso();
-    } else {
+      if (rol == 'cuidador') {
+        _irAPendienteValidacion();
+      } else if (rol == 'familiar') {
+        _registroFamiliarExitoso();
+      } else {
+        _mostrarError('El rol seleccionado no es válido.');
+      }
+    } on DocumentoException catch (e) {
       _mostrarError(
-        'El rol seleccionado no es válido.',
+        '${e.mensaje} Tu correo ya quedó verificado: '
+        'toca «Reintentar adjuntar documento».',
       );
+    } on ApiException catch (e) {
+      _mostrarError(e.mensaje);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _verificando = false;
+        });
+      }
     }
   }
 
@@ -234,35 +267,35 @@ class _VerificarCodigoRegistroScreenState
   // REENVIAR CÓDIGO
   // =========================
 
-  Future<void> _reenviarCodigo() async {
+  Future<void> _reenviarCodigo({bool silencioso = false}) async {
     if (_reenviando) return;
 
     setState(() {
       _reenviando = true;
     });
 
-    // TODO:
-    // Posteriormente llamar al endpoint para
-    // generar y enviar un nuevo código.
+    try {
+      await AuthService.reenviarCodigo(widget.email);
 
-    await Future.delayed(
-      const Duration(seconds: 1),
-    );
+      if (!mounted || silencioso) return;
 
-    if (!mounted) return;
-
-    setState(() {
-      _reenviando = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Se envió un nuevo código a ${widget.email}',
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Se envió un nuevo código a ${widget.email}',
+          ),
+          behavior: SnackBarBehavior.floating,
         ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
+    } on ApiException catch (e) {
+      if (mounted && !silencioso) _mostrarError(e.mensaje);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _reenviando = false;
+        });
+      }
+    }
   }
 
   // =========================
@@ -516,8 +549,10 @@ class _VerificarCodigoRegistroScreenState
                                         Colors.white,
                                   ),
                                 )
-                              : const Text(
-                                  'Verificar correo',
+                              : Text(
+                                  _verificado && !_documentoListo
+                                      ? 'Reintentar adjuntar documento'
+                                      : 'Verificar correo',
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight:
@@ -532,7 +567,7 @@ class _VerificarCodigoRegistroScreenState
                       TextButton(
                         onPressed: _reenviando
                             ? null
-                            : _reenviarCodigo,
+                            : () => _reenviarCodigo(),
                         child: Text(
                           _reenviando
                               ? 'Enviando...'

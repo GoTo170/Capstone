@@ -1,7 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import 'cuenta_pendiente_validacion_screen.dart';
+import 'verificar_codigo_registro_screen.dart';
 
 import '../models/profesion_cuidador.dart';
 import '../widgets/password_requirements_grid.dart';
@@ -37,9 +37,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _formularioFueEnviado = false;
   bool _enviando = false;
 
-  // Si la cuenta ya se creó pero falló la subida del documento, el siguiente
-  // intento no vuelve a crear la cuenta: solo reintenta adjuntar el documento.
-  bool _cuentaCreada = false;
+  // Datos de la cuenta recién creada: se usan para subir el documento del cuidador
+  // una vez que verifica su correo.
   String _emailCreado = '';
   String _passwordCreado = '';
 
@@ -253,77 +252,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _emailController.text.trim();
     final mensajero = ScaffoldMessenger.of(context);
 
-    // TODO (siguientes etapas):
-    // - Verificación del correo con código de 6 dígitos (requiere servicio
-    //   de envío de correos en el backend).
-    // - Guardar los datos de la carta de recomendación.
+    // TODO: guardar los datos de la carta de recomendación.
 
     try {
-      if (!_cuentaCreada) {
-        await AuthService.registrar(
-          nombre: _nombreController.text.trim(),
-          apellido: _apellidoController.text.trim(),
-          email: email,
-          password: _passwordController.text,
-          rol: _rolSeleccionado!,
-          profesion: _profesion?.nombre,
-          esAreaSalud: _profesion?.categoria == CategoriaProfesion.areaSalud,
-          experiencia: _requiereExperiencia
-              ? '${_experienciaController.text.trim()} años de experiencia'
-              : null,
-          serviciosOfrecidos:
-              _puertasAdentro == true ? 'Cuidado puertas adentro' : null,
-        );
-        _cuentaCreada = true;
-        _emailCreado = email;
-        _passwordCreado = _passwordController.text;
-      }
-
-      // El documento que acredita la profesión se sube apenas existe la cuenta.
-      if (_esCuidador && _documentoSeleccionado != null) {
-        await _subirDocumentoTrasRegistro();
-      }
+      await AuthService.registrar(
+        nombre: _nombreController.text.trim(),
+        apellido: _apellidoController.text.trim(),
+        email: email,
+        password: _passwordController.text,
+        rol: _rolSeleccionado!,
+        profesion: _profesion?.nombre,
+        esAreaSalud: _profesion?.categoria == CategoriaProfesion.areaSalud,
+        experiencia: _requiereExperiencia
+            ? '${_experienciaController.text.trim()} años de experiencia'
+            : null,
+        serviciosOfrecidos:
+            _puertasAdentro == true ? 'Cuidado puertas adentro' : null,
+      );
+      _emailCreado = email;
+      _passwordCreado = _passwordController.text;
 
       if (!mounted) return;
 
-      if (_esCuidador) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CuentaPendienteValidacionScreen(email: email),
+      // Se envió un código al correo: se pide en la pantalla siguiente. Si la persona vuelve
+      // atrás para cambiar el correo, el próximo intento crea la cuenta de nuevo.
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VerificarCodigoRegistroScreen(
+            email: email,
+            rol: _rolSeleccionado!,
+            alVerificar: _esCuidador && _documentoSeleccionado != null
+                ? _subirDocumentoTrasRegistro
+                : null,
           ),
-          (route) => route.isFirst,
-        );
-      } else {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-
-        mensajero.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Cuenta creada correctamente. Ya puedes iniciar sesión.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } on DocumentoException catch (e) {
-      mensajero.showSnackBar(
-        SnackBar(
-          content: Text('${e.mensaje} Tu cuenta ya fue creada: toca «Crear cuenta» para reintentar adjuntar el documento.'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 8),
         ),
       );
     } on ApiException catch (e) {
       mensajero.showSnackBar(
         SnackBar(
-          content: Text(
-            _cuentaCreada
-                ? '${e.mensaje} Tu cuenta ya fue creada: toca «Crear cuenta» para reintentar adjuntar el documento.'
-                : e.mensaje,
-          ),
+          content: Text(e.mensaje),
           behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: _cuentaCreada ? 8 : 4),
+          duration: const Duration(seconds: 4),
         ),
       );
     } finally {
