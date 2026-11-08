@@ -3,6 +3,9 @@ import time as reloj
 import random
 import uuid
 import string
+import secrets
+import hmac
+import hashlib
 import json
 from datetime import date, datetime, timedelta, time, timezone
 
@@ -323,6 +326,46 @@ def salud_db(db: Session = Depends(get_db)):
 # Usuarios / autenticación
 # ============================================================
 
+MINUTOS_VIGENCIA_CODIGO = 10
+MAX_INTENTOS_CODIGO = 5
+SEGUNDOS_ENTRE_ENVIOS = 60
+MAX_ENVIOS_CODIGO = 6
+
+
+def _hash_codigo(email, codigo):
+    clave = (os.getenv("SECRET_KEY") or "mamoru").encode()
+    return hmac.new(clave, f"{str(email).strip().lower()}:{codigo}".encode(), hashlib.sha256).hexdigest()
+
+
+def _exigir_espera_entre_envios(verificacion):
+    pasados = (datetime.now() - verificacion.ultimo_envio).total_seconds()
+    if pasados < SEGUNDOS_ENTRE_ENVIOS:
+        falta = int(SEGUNDOS_ENTRE_ENVIOS - pasados) + 1
+        raise HTTPException(
+            status_code=429,
+            detail=f"Espera {falta} segundos antes de pedir otro código.",
+            headers={"Retry-After": str(falta)},
+        )
+
+
+def _enviar_codigo_verificacion(db, usuario, verificacion=None):
+    """Genera un código nuevo, guarda solo su huella y lo envía por correo."""
+    codigo = "".join(secrets.choice(string.digits) for _ in range(6))
+    ahora = datetime.now()
+    if verificacion is None:
+        verificacion = models.VerificacionCorreo(usuario_id=usuario.id, envios=0)
+        db.add(verificacion)
+    verificacion.codigo_hash = _hash_codigo(usuario.email, codigo)
+    verificacion.expira = ahora + timedelta(minutes=MINUTOS_VIGENCIA_CODIGO)
+    verificacion.intentos = 0
+    verificacion.envios = (verificacion.envios or 0) + 1
+    verificacion.ultimo_envio = ahora
+    db.commit()
+    asunto, cuerpo = correo.correo_codigo_verificacion(usuario.nombre, codigo, MINUTOS_VIGENCIA_CODIGO)
+    correo.enviar_correo(usuario.email, asunto, cuerpo)
+    return codigo
+
+
 @app.post("/usuarios", response_model=schemas.UsuarioOut)
 def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)):
     if usuario.rol not in ("familiar", "cuidador"):
@@ -334,7 +377,21 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
 
     ya_existe = db.query(models.Usuario).filter(models.Usuario.email == usuario.email).first()
     if ya_existe:
-        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese correo")
+        # Cuenta que nunca confirmó su correo (por ejemplo, se equivocó al escribirlo): se rehace desde cero.
+        pendiente = db.query(models.VerificacionCorreo).filter(
+            models.VerificacionCorreo.usuario_id == ya_existe.id
+        ).first()
+        if pendiente is None:
+            raise HTTPException(status_code=400, detail="Ya existe un usuario con ese correo")
+        _exigir_espera_entre_envios(pendiente)
+        db.query(models.PerfilCuidador).filter(
+            models.PerfilCuidador.usuario_id == ya_existe.id
+        ).delete(synchronize_session=False)
+        db.query(models.VerificacionCorreo).filter(
+            models.VerificacionCorreo.usuario_id == ya_existe.id
+        ).delete(synchronize_session=False)
+        db.query(models.Usuario).filter(models.Usuario.id == ya_existe.id).delete(synchronize_session=False)
+        db.flush()
 
     nuevo_usuario = models.Usuario(
         nombre=usuario.nombre,
@@ -361,13 +418,72 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
     db.commit()
     db.refresh(nuevo_usuario)
 
+    # El aviso al equipo se envía cuando el cuidador confirma su correo (ver /verificar-correo).
+    _enviar_codigo_verificacion(db, nuevo_usuario)
+    return nuevo_usuario
+
+
+@app.post("/verificar-correo")
+def verificar_correo(datos: schemas.VerificarCorreoIn, db: Session = Depends(get_db)):
+    usuario = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
+    verificacion = None
+    if usuario:
+        verificacion = db.query(models.VerificacionCorreo).filter(
+            models.VerificacionCorreo.usuario_id == usuario.id
+        ).first()
+    if not usuario or not verificacion:
+        raise HTTPException(
+            status_code=400,
+            detail="No hay una verificación pendiente para este correo. Si ya verificaste tu cuenta, inicia sesión.",
+        )
+    if datetime.now() > verificacion.expira:
+        raise HTTPException(status_code=400, detail="El código venció. Pide uno nuevo.")
+    if verificacion.intentos >= MAX_INTENTOS_CODIGO:
+        raise HTTPException(status_code=429, detail="Demasiados intentos. Pide un código nuevo.")
+
+    codigo = (datos.codigo or "").strip()
+    if not hmac.compare_digest(_hash_codigo(usuario.email, codigo), verificacion.codigo_hash):
+        verificacion.intentos = (verificacion.intentos or 0) + 1
+        db.commit()
+        restantes = MAX_INTENTOS_CODIGO - verificacion.intentos
+        if restantes <= 0:
+            raise HTTPException(status_code=429, detail="Demasiados intentos. Pide un código nuevo.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Código incorrecto. Te quedan {restantes} intento{'s' if restantes != 1 else ''}.",
+        )
+
+    db.delete(verificacion)
+    usuario.email_verificado = True
+    db.commit()
+
     if usuario.rol == "cuidador":
         notificar_administradores(
             db,
             "cuidador_nuevo",
-            f"{nuevo_usuario.nombre} se registró como cuidador y espera validación",
+            f"{usuario.nombre} se registró como cuidador y espera validación",
         )
-    return nuevo_usuario
+    return {"verificado": True, "rol": usuario.rol}
+
+
+@app.post("/reenviar-codigo")
+def reenviar_codigo(datos: schemas.ReenviarCodigoIn, db: Session = Depends(get_db)):
+    usuario = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
+    verificacion = None
+    if usuario:
+        verificacion = db.query(models.VerificacionCorreo).filter(
+            models.VerificacionCorreo.usuario_id == usuario.id
+        ).first()
+    if verificacion is None:
+        return {"enviado": True}  # misma respuesta exista o no el correo: no se revela quién tiene cuenta
+    _exigir_espera_entre_envios(verificacion)
+    if (verificacion.envios or 0) >= MAX_ENVIOS_CODIGO:
+        raise HTTPException(
+            status_code=429,
+            detail="Pediste demasiados códigos. Vuelve a crear tu cuenta para empezar de nuevo.",
+        )
+    _enviar_codigo_verificacion(db, usuario, verificacion)
+    return {"enviado": True}
 
 
 @app.get("/usuarios", response_model=list[schemas.UsuarioOut])
@@ -539,6 +655,9 @@ def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
     if not usuario.activo:
         raise HTTPException(status_code=403, detail="Esta cuenta está desactivada")
 
+    if db.query(models.VerificacionCorreo).filter(models.VerificacionCorreo.usuario_id == usuario.id).first():
+        raise HTTPException(status_code=403, detail="Debes verificar tu correo antes de iniciar sesión.")
+
     minutos = None if usuario.rol == "administrador" else MINUTOS_SESION_MOVIL
     token = crear_token_acceso({"sub": str(usuario.id), "rol": usuario.rol}, minutos=minutos)
     usuario_out = schemas.UsuarioOut.model_validate(usuario)
@@ -665,7 +784,9 @@ def listar_cuidadores(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(obtener_usuario_actual),
 ):
-    query = db.query(models.PerfilCuidador)
+    query = db.query(models.PerfilCuidador).filter(
+        ~models.PerfilCuidador.usuario_id.in_(db.query(models.VerificacionCorreo.usuario_id))
+    )
     if usuario_actual.rol != "administrador":
         query = query.filter(models.PerfilCuidador.estado_validacion == "aprobado")
     return query.all()
@@ -697,6 +818,9 @@ def actualizar_estado_cuidador(
     perfil = db.query(models.PerfilCuidador).filter(models.PerfilCuidador.id == cuidador_id).first()
     if not perfil:
         raise HTTPException(status_code=404, detail="Perfil de cuidador no encontrado")
+
+    if db.query(models.VerificacionCorreo).filter(models.VerificacionCorreo.usuario_id == perfil.usuario_id).first():
+        raise HTTPException(status_code=400, detail="Este cuidador aún no verificó su correo")
 
     motivo = (datos.motivo_rechazo or "").strip()
     if datos.estado_validacion == "rechazado":

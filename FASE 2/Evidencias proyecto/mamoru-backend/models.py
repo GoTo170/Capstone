@@ -249,3 +249,15 @@ class AjusteNotificacion(Base):
 
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
     datos = Column(Text, nullable=False, default="{}")
+
+
+class VerificacionCorreo(Base):
+    """Cuenta recién creada que aún no confirma su correo (guarda solo la huella del código)."""
+    __tablename__ = "verificaciones_correo"
+
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    codigo_hash = Column(String(64), nullable=False)
+    expira = Column(TIMESTAMP, nullable=False)
+    intentos = Column(Integer, nullable=False, default=0)
+    envios = Column(Integer, nullable=False, default=1)
+    ultimo_envio = Column(TIMESTAMP, nullable=False)

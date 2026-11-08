@@ -778,3 +778,13 @@ class RolInternoCambio(BaseModel):
 class AjusteNotificacionCambio(BaseModel):
     clave: str
     activa: bool
+
+
+
+class VerificarCorreoIn(BaseModel):
+    email: EmailStr
+    codigo: str
+
+
+class ReenviarCodigoIn(BaseModel):
+    email: EmailStr

@@ -67,7 +67,7 @@ def correo_cuidador_aprobado(nombre):
     return "Tu perfil de cuidador fue aprobado", _plantilla(
         "¡Tu perfil fue aprobado!",
         [f"Hola {n},", "Nuestro equipo revisó tus datos y documentos y tu perfil de cuidador en Mamoru quedó <b>aprobado</b>.",
-         "Ya puedes abrir la app, recibir solicitudes de familias y comenzar a trabajar."],
+         "Ya puedes <b>iniciar sesión</b> en la app de Mamoru con tu correo y contraseña, recibir solicitudes de familias y comenzar a trabajar."],
     )
 
 
@@ -78,4 +78,15 @@ def correo_cuidador_rechazado(nombre, motivo):
         "Tu perfil no pudo ser aprobado",
         [f"Hola {n},", "Revisamos tu perfil de cuidador en Mamoru y por ahora no pudimos aprobarlo.",
          f"<b>Motivo:</b> {m}", "Puedes corregir lo indicado desde la app y volver a enviarlo para una nueva revisión."],
+    )
+
+
+def correo_codigo_verificacion(nombre, codigo, minutos):
+    n = html.escape(nombre or "")
+    c = html.escape(str(codigo))
+    return "Tu código de verificación de Mamoru", _plantilla(
+        "Verifica tu correo",
+        [f"Hola {n},", "Usa este código para confirmar tu correo y terminar de crear tu cuenta en Mamoru:",
+         f"<p style='font-size:34px;letter-spacing:10px;font-weight:bold;text-align:center;margin:18px 0;color:#2f6f5e'>{c}</p>",
+         f"El código vence en {minutos} minutos. Si tú no creaste una cuenta en Mamoru, ignora este mensaje."],
     )
