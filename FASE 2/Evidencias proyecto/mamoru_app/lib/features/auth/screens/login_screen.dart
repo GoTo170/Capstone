@@ -10,6 +10,7 @@ import '../services/auth_service.dart';
 import '../widgets/validated_text_field.dart';
 
 import 'cuenta_pendiente_validacion_screen.dart';
+import 'cuenta_rechazada_screen.dart';
 import 'escanear_invitacion_screen.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
@@ -159,16 +160,21 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // Pendiente o rechazado: todavía no puede usar la app.
-      AuthService.cerrarSesion();
-
+      // Rechazado: puede subir su documento de nuevo (la sesión sigue abierta solo para eso).
       if (estado == 'rechazado') {
-        _mostrarMensaje(
-          'Tu solicitud de cuenta fue rechazada. '
-          'Si crees que es un error, contacta al equipo de Mamoru.',
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CuentaRechazadaScreen(
+              email: usuario.email ?? _emailController.text.trim(),
+            ),
+          ),
         );
         return;
       }
+
+      // Pendiente: todavía no puede usar la app.
+      AuthService.cerrarSesion();
 
       Navigator.push(
         context,
