@@ -1,18 +1,49 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import CampoContrasena from '../components/CampoContrasena'
 import { apiFetch } from '../lib/api'
 
-const MINIMO = 8
+const NOMBRE_CANAL = 'mamoru-recuperacion'
+
+/** Mismos requisitos que el registro de la app (el servidor los vuelve a comprobar). */
+function requisitosDe(p: string) {
+  return [
+    { texto: 'Mínimo 8 caracteres', ok: p.length >= 8 },
+    { texto: '1 mayúscula', ok: /[A-ZÁÉÍÓÚÑÜ]/.test(p) },
+    { texto: '1 minúscula', ok: /[a-záéíóúñü]/.test(p) },
+    { texto: '1 número', ok: /[0-9]/.test(p) },
+    { texto: '1 carácter especial', ok: /[^A-Za-z0-9ÁÉÍÓÚÑÜáéíóúñü\s]/.test(p) },
+  ]
+}
+
+/** Si hay otra pestaña de Mamoru esperando este enlace, se lo entrega y devuelve true. */
+function ofrecerALaVentanaAnterior(token: string): Promise<boolean> {
+  return new Promise((resolver) => {
+    if (typeof BroadcastChannel === 'undefined') return resolver(false)
+    const canal = new BroadcastChannel(NOMBRE_CANAL)
+    const terminar = (r: boolean) => {
+      window.clearTimeout(espera)
+      canal.close()
+      resolver(r)
+    }
+    const espera = window.setTimeout(() => terminar(false), 900)
+    canal.onmessage = (e) => {
+      if (e.data && e.data.tipo === 'recibido') terminar(true)
+    }
+    canal.postMessage({ tipo: 'enlace', token })
+  })
+}
 
 /** Paso 2: pantalla a la que lleva el botón del correo (/restablecer-contrasena?token=...). */
 export default function RestablecerContrasena() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
+  const location = useLocation()
+  const sinDifundir = Boolean((location.state as { sinDifundir?: boolean } | null)?.sinDifundir)
   const token = params.get('token') || ''
 
-  const [estado, setEstado] = useState<'validando' | 'invalido' | 'formulario' | 'listo'>('validando')
+  const [estado, setEstado] = useState<'validando' | 'invalido' | 'otraVentana' | 'formulario' | 'listo'>('validando')
   const [nueva, setNueva] = useState('')
   const [confirmacion, setConfirmacion] = useState('')
   const [error, setError] = useState('')
@@ -26,12 +57,18 @@ export default function RestablecerContrasena() {
     }
     let activo = true
     apiFetch<{ valido: boolean }>(`/recuperar-contrasena/validar?token=${encodeURIComponent(token)}`)
-      .then((r) => activo && setEstado(r.valido ? 'formulario' : 'invalido'))
+      .then(async (r) => {
+        if (!activo) return
+        if (!r.valido) return setEstado('invalido')
+        // Abierto desde el correo: si la ventana donde se pidió el cambio sigue abierta, sigue allí.
+        const laTomoOtra = sinDifundir ? false : await ofrecerALaVentanaAnterior(token)
+        if (activo) setEstado(laTomoOtra ? 'otraVentana' : 'formulario')
+      })
       .catch(() => activo && setEstado('invalido'))
     return () => {
       activo = false
     }
-  }, [token])
+  }, [token, sinDifundir])
 
   // Tras guardar, vuelve solo al login.
   useEffect(() => {
@@ -44,8 +81,8 @@ export default function RestablecerContrasena() {
     evento.preventDefault()
     setError('')
 
-    if (nueva.length < MINIMO) {
-      setError(`La contraseña debe tener al menos ${MINIMO} caracteres.`)
+    if (requisitosDe(nueva).some((r) => !r.ok)) {
+      setError('La contraseña no cumple todos los requisitos de la lista.')
       return
     }
     if (nueva !== confirmacion) {
@@ -93,6 +130,23 @@ export default function RestablecerContrasena() {
     )
   }
 
+  if (estado === 'otraVentana') {
+    return (
+      <AuthLayout>
+        <h1>Correo confirmado</h1>
+        <p className="auth-sub">
+          Listo. Continúa en la ventana donde pediste el cambio: ahí ya puedes crear tu nueva
+          contraseña. Puedes cerrar esta pestaña.
+        </p>
+        <div className="auth-footer">
+          <button type="button" className="auth-link" onClick={() => setEstado('formulario')}>
+            Continuar en esta ventana
+          </button>
+        </div>
+      </AuthLayout>
+    )
+  }
+
   if (estado === 'listo') {
     return (
       <AuthLayout>
@@ -129,6 +183,13 @@ export default function RestablecerContrasena() {
             onChange={(e) => setNueva(e.target.value)}
             required
           />
+          <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', fontSize: '0.85rem' }}>
+            {requisitosDe(nueva).map((r) => (
+              <li key={r.texto} style={r.ok ? { color: '#3fb68b' } : { opacity: 0.65 }}>
+                {r.ok ? '✓' : '○'} {r.texto}
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="field">
           <label htmlFor="confirmacion">Confirmar contraseña</label>
