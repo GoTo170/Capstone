@@ -76,6 +76,33 @@ class AuthService {
     await ApiClient.post('/reenviar-codigo', {'email': email});
   }
  
+  /// Pide el correo para cambiar la contraseña. El servidor responde igual exista o no la cuenta.
+  static Future<void> solicitarRecuperacion(String email) async {
+    await ApiClient.post('/recuperar-contrasena', {
+      'email': email,
+      'origen': 'app',
+    });
+  }
+
+  /// Indica si el enlace del correo sigue vigente (30 minutos, un solo uso).
+  static Future<bool> enlaceRecuperacionValido(String token) async {
+    final datos = await ApiClient.get(
+      '/recuperar-contrasena/validar?token=${Uri.encodeQueryComponent(token)}',
+    ) as Map<String, dynamic>;
+    return datos['valido'] == true;
+  }
+
+  /// Cambia la contraseña usando el enlace del correo.
+  static Future<void> restablecerContrasena(
+    String token,
+    String password,
+  ) async {
+    await ApiClient.post('/restablecer-contrasena', {
+      'token': token,
+      'password': password,
+    });
+  }
+
   /// El adulto mayor entra con el código de invitación (sin correo ni clave).
   static Future<UsuarioSesion> canjearInvitacion(String codigo) async {
     Sesion.cerrar();
