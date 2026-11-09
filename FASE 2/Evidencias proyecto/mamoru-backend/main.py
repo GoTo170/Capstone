@@ -534,6 +534,22 @@ def reenviar_codigo(datos: schemas.ReenviarCodigoIn, db: Session = Depends(get_d
     return {"enviado": True}
 
 
+def validar_contrasena_segura(password):
+    """8+ caracteres, mayúscula, minúscula, número y un carácter especial (igual que el registro de la app)."""
+    p = password or ""
+    if not (
+        len(p) >= LARGO_MINIMO_CONTRASENA
+        and any(c.isupper() for c in p)
+        and any(c.islower() for c in p)
+        and any(c.isdigit() for c in p)
+        and any(not c.isalnum() and not c.isspace() for c in p)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.",
+        )
+
+
 MINUTOS_VIGENCIA_ENLACE = 30
 MAX_PEDIDOS_RECUPERACION_HORA = 5
 
@@ -606,7 +622,7 @@ def validar_enlace_recuperacion(token: str = "", db: Session = Depends(get_db)):
 
 @app.post("/restablecer-contrasena")
 def restablecer_contrasena(datos: schemas.RestablecerContrasenaIn, db: Session = Depends(get_db)):
-    validar_largo_contrasena(datos.password, "La contraseña nueva")
+    validar_contrasena_segura(datos.password)
     fila = _fila_recuperacion_vigente(db, datos.token)
     if fila is None:
         raise HTTPException(status_code=400, detail="El enlace venció o ya fue usado. Pide uno nuevo.")
