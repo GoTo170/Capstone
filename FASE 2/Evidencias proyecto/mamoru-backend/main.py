@@ -684,7 +684,7 @@ def crear_miembro_equipo(
         raise HTTPException(status_code=400, detail="Rol no permitido para el equipo interno")
     if datos.rol_interno not in ROLES_INTERNOS_EQUIPO:
         raise HTTPException(status_code=400, detail="Indica el rol interno: superadmin, moderador o soporte")
-    validar_largo_contrasena(datos.password)
+    validar_contrasena_segura(datos.password)
 
     ya_existe = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
     if ya_existe:
@@ -947,8 +947,7 @@ def cambiar_mi_contrasena(
     """Cambia la contraseña de quien está conectado (nunca la de otra persona)."""
     if not usuario_actual.password_hash or not verify_password(datos.password_actual, usuario_actual.password_hash):
         raise HTTPException(status_code=400, detail="La contraseña actual no es correcta")
-    if len(datos.password_nueva) < LARGO_MINIMO_CONTRASENA:
-        raise HTTPException(status_code=400, detail=f"La contraseña nueva debe tener al menos {LARGO_MINIMO_CONTRASENA} caracteres")
+    validar_contrasena_segura(datos.password_nueva)
     if datos.password_nueva == datos.password_actual:
         raise HTTPException(status_code=400, detail="La contraseña nueva debe ser distinta de la actual")
  
