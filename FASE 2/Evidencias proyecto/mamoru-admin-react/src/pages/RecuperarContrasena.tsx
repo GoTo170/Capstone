@@ -1,21 +1,30 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
+import { apiFetch } from '../lib/api'
 
-/**
- * Paso 1 de la recuperación de contraseña.
- * Por ahora es SOLO VISUAL: todavía no se envían correos.
- * Cuando exista el envío de correos, aquí se llamará al backend.
- */
+/** Paso 1: se pide el correo y el servidor envía el enlace para crear una nueva contraseña. */
 export default function RecuperarContrasena() {
-  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [enviado, setEnviado] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
 
-  function manejarEnvio(evento: FormEvent<HTMLFormElement>) {
+  async function manejarEnvio(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-    // TODO (cuando haya correos): POST al backend con el email.
-    setEnviado(true)
+    setError('')
+    setEnviando(true)
+    try {
+      await apiFetch('/recuperar-contrasena', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim() }),
+      })
+      setEnviado(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo enviar el correo. Intenta de nuevo.')
+    } finally {
+      setEnviando(false)
+    }
   }
 
   if (enviado) {
@@ -23,22 +32,10 @@ export default function RecuperarContrasena() {
       <AuthLayout>
         <h1>Revisa tu correo</h1>
         <p className="auth-sub">
-          Si <b>{email}</b> corresponde a una cuenta del equipo, te enviamos un enlace para
-          cambiar tu contraseña. El enlace verifica que fuiste tú quien lo pidió y vence en
-          30 minutos.
+          Si <b>{email.trim()}</b> corresponde a una cuenta, te enviamos un correo para confirmar
+          que fuiste tú. Presiona el botón del mensaje para crear tu nueva contraseña. El enlace
+          vence en 30 minutos. Si no lo ves, revisa también la carpeta de spam.
         </p>
-
-        <div className="aviso-ok">
-          Modo demostración: todavía no se envían correos reales.
-        </div>
-
-        <button
-          type="button"
-          className="auth-submit"
-          onClick={() => navigate('/restablecer-contrasena')}
-        >
-          Abrir el enlace del correo (simulación)
-        </button>
 
         <div className="auth-footer">
           <button type="button" className="auth-link" onClick={() => setEnviado(false)}>
@@ -58,6 +55,12 @@ export default function RecuperarContrasena() {
         Escribe el correo de tu cuenta y te enviaremos un enlace para crear una nueva.
       </p>
 
+      {error && (
+        <div className="auth-error" style={{ display: 'block' }}>
+          {error}
+        </div>
+      )}
+
       <form onSubmit={manejarEnvio}>
         <div className="field">
           <label htmlFor="email">Correo institucional</label>
@@ -70,8 +73,8 @@ export default function RecuperarContrasena() {
             required
           />
         </div>
-        <button type="submit" className="auth-submit">
-          Enviar enlace
+        <button type="submit" className="auth-submit" disabled={enviando}>
+          {enviando ? 'Enviando…' : 'Enviar enlace'}
         </button>
       </form>
 
