@@ -805,3 +805,12 @@ class EnviarCorreoIn(BaseModel):
 
 class AvisosCorreoCambio(BaseModel):
     activo: bool
+
+
+class RecuperarContrasenaIn(BaseModel):
+    email: EmailStr
+
+
+class RestablecerContrasenaIn(BaseModel):
+    token: str
+    password: str

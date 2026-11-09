@@ -534,6 +534,100 @@ def reenviar_codigo(datos: schemas.ReenviarCodigoIn, db: Session = Depends(get_d
     return {"enviado": True}
 
 
+MINUTOS_VIGENCIA_ENLACE = 30
+MAX_PEDIDOS_RECUPERACION_HORA = 5
+
+
+def _hash_token_recuperacion(token):
+    clave = (os.getenv("SECRET_KEY") or "mamoru").encode()
+    return hmac.new(clave, str(token).encode(), hashlib.sha256).hexdigest()
+
+
+@app.post("/recuperar-contrasena")
+def recuperar_contrasena(datos: schemas.RecuperarContrasenaIn, db: Session = Depends(get_db)):
+    """Envía el enlace para cambiar la contraseña. Responde igual exista o no la cuenta."""
+    from sqlalchemy import func
+    respuesta = {"enviado": True}
+    usuario = db.query(models.Usuario).filter(
+        func.lower(models.Usuario.email) == str(datos.email).strip().lower()
+    ).first()
+    if not usuario or not usuario.activo or not usuario.password_hash:
+        return respuesta
+    if db.query(models.VerificacionCorreo).filter(models.VerificacionCorreo.usuario_id == usuario.id).first():
+        return respuesta  # cuenta sin verificar: primero debe confirmar su correo
+
+    ahora = datetime.now()
+    fila = db.query(models.RecuperacionContrasena).filter(
+        models.RecuperacionContrasena.usuario_id == usuario.id
+    ).first()
+    if fila is None:
+        fila = models.RecuperacionContrasena(usuario_id=usuario.id, envios=0, primer_envio=ahora, ultimo_envio=ahora - timedelta(days=1))
+        db.add(fila)
+    else:
+        if (ahora - fila.ultimo_envio).total_seconds() < SEGUNDOS_ENTRE_ENVIOS:
+            return respuesta  # demasiado seguido: se ignora sin avisar (no revela si la cuenta existe)
+        if (ahora - fila.primer_envio).total_seconds() > 3600:
+            fila.envios = 0
+            fila.primer_envio = ahora
+        if (fila.envios or 0) >= MAX_PEDIDOS_RECUPERACION_HORA:
+            return respuesta
+
+    token = secrets.token_urlsafe(32)
+    fila.token_hash = _hash_token_recuperacion(token)
+    fila.expira = ahora + timedelta(minutes=MINUTOS_VIGENCIA_ENLACE)
+    fila.envios = (fila.envios or 0) + 1
+    fila.ultimo_envio = ahora
+    db.commit()
+
+    base = (os.getenv("PANEL_URL") or "https://capstone-mamoru-admin-react.vercel.app").rstrip("/")
+    enlace = f"{base}/restablecer-contrasena?token={token}"
+    asunto, cuerpo = correo.correo_restablecer_contrasena(usuario.nombre, enlace, MINUTOS_VIGENCIA_ENLACE)
+    correo.enviar_correo(usuario.email, asunto, cuerpo)
+    if usuario.rol == "administrador":
+        registrar_auditoria(db, usuario.id, "Pidió restablecer su contraseña", "sesion", usuario.id, None)
+    return respuesta
+
+
+def _fila_recuperacion_vigente(db, token):
+    if not token:
+        return None
+    fila = db.query(models.RecuperacionContrasena).filter(
+        models.RecuperacionContrasena.token_hash == _hash_token_recuperacion(token)
+    ).first()
+    if fila is None or fila.expira < datetime.now():
+        return None
+    return fila
+
+
+@app.get("/recuperar-contrasena/validar")
+def validar_enlace_recuperacion(token: str = "", db: Session = Depends(get_db)):
+    return {"valido": _fila_recuperacion_vigente(db, token) is not None}
+
+
+@app.post("/restablecer-contrasena")
+def restablecer_contrasena(datos: schemas.RestablecerContrasenaIn, db: Session = Depends(get_db)):
+    validar_largo_contrasena(datos.password, "La contraseña nueva")
+    fila = _fila_recuperacion_vigente(db, datos.token)
+    if fila is None:
+        raise HTTPException(status_code=400, detail="El enlace venció o ya fue usado. Pide uno nuevo.")
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == fila.usuario_id).first()
+    if not usuario or not usuario.activo:
+        raise HTTPException(status_code=400, detail="El enlace venció o ya fue usado. Pide uno nuevo.")
+
+    usuario.password_hash = hash_password(datos.password)
+    db.delete(fila)  # un solo uso
+    db.query(models.IntentoLogin).filter(
+        models.IntentoLogin.email == str(usuario.email or "").strip().lower()
+    ).delete(synchronize_session=False)  # si estaba bloqueado por intentos fallidos, queda libre
+    db.commit()
+
+    if usuario.rol == "administrador":
+        registrar_auditoria(db, usuario.id, "Restableció su contraseña por correo", "sesion", usuario.id, None)
+    asunto, cuerpo = correo.correo_contrasena_cambiada(usuario.nombre)
+    correo.enviar_correo(usuario.email, asunto, cuerpo)
+    return {"ok": True}
+
+
 @app.get("/usuarios", response_model=list[schemas.UsuarioOut])
 def listar_usuarios(
     db: Session = Depends(get_db),

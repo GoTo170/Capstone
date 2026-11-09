@@ -261,3 +261,15 @@ class VerificacionCorreo(Base):
     intentos = Column(Integer, nullable=False, default=0)
     envios = Column(Integer, nullable=False, default=1)
     ultimo_envio = Column(TIMESTAMP, nullable=False)
+
+
+class RecuperacionContrasena(Base):
+    """Enlace vigente para cambiar la contraseña (solo guarda la huella del token)."""
+    __tablename__ = "recuperaciones_contrasena"
+
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    token_hash = Column(String(64), nullable=False, index=True)
+    expira = Column(TIMESTAMP, nullable=False)
+    envios = Column(Integer, nullable=False, default=1)
+    primer_envio = Column(TIMESTAMP, nullable=False)
+    ultimo_envio = Column(TIMESTAMP, nullable=False)

@@ -156,3 +156,26 @@ def correo_aviso_equipo(nombre, mensaje):
         [f"Hola {n},", f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #2f6f5e;line-height:1.5'>{texto_a_html(mensaje)}</div>",
          "Entra al panel para revisarlo. Puedes desactivar estos correos en Configuración → Notificaciones."],
     )
+
+
+def correo_restablecer_contrasena(nombre, enlace, minutos):
+    n = html.escape(nombre or "")
+    e = html.escape(enlace, quote=True)
+    return "Restablece tu contraseña de Mamoru", _plantilla(
+        "¿Pediste cambiar tu contraseña?",
+        [f"Hola {n},", "Recibimos una solicitud para cambiar la contraseña de tu cuenta de Mamoru. ¿Fuiste tú?",
+         f"<p style='text-align:center;margin:22px 0'><a href='{e}' style='background:#2f6f5e;color:#fff;text-decoration:none;"
+         "padding:12px 26px;border-radius:8px;font-weight:bold;display:inline-block'>Sí, fui yo: crear mi nueva contraseña</a></p>",
+         f"El enlace vence en {minutos} minutos y solo se puede usar una vez.",
+         "<p style='margin:0 0 12px;line-height:1.5'><b>Si no fuiste tú</b>, ignora este correo: tu contraseña seguirá siendo la misma.</p>",
+         f"<p style='font-size:12px;color:#777;word-break:break-all'>Si el botón no funciona, copia este enlace en tu navegador:<br>{e}</p>"],
+    )
+
+
+def correo_contrasena_cambiada(nombre):
+    n = html.escape(nombre or "")
+    return "Tu contraseña de Mamoru fue cambiada", _plantilla(
+        "Contraseña actualizada",
+        [f"Hola {n},", "La contraseña de tu cuenta de Mamoru se cambió correctamente.",
+         "Si no fuiste tú, comunícate con el equipo de Mamoru de inmediato."],
+    )
