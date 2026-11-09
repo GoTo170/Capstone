@@ -13,7 +13,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 from database import engine, get_db, Base
 import models
 import schemas
@@ -423,7 +423,7 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
         )
     validar_largo_contrasena(usuario.password)
 
-    ya_existe = db.query(models.Usuario).filter(models.Usuario.email == usuario.email).first()
+    ya_existe = db.query(models.Usuario).filter(func.lower(models.Usuario.email) == str(usuario.email).strip().lower()).first()
     if ya_existe:
         # Cuenta que nunca confirmó su correo (por ejemplo, se equivocó al escribirlo): se rehace desde cero.
         pendiente = db.query(models.VerificacionCorreo).filter(
@@ -473,7 +473,7 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
 
 @app.post("/verificar-correo")
 def verificar_correo(datos: schemas.VerificarCorreoIn, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
+    usuario = db.query(models.Usuario).filter(func.lower(models.Usuario.email) == str(datos.email).strip().lower()).first()
     verificacion = None
     if usuario:
         verificacion = db.query(models.VerificacionCorreo).filter(
@@ -516,7 +516,7 @@ def verificar_correo(datos: schemas.VerificarCorreoIn, db: Session = Depends(get
 
 @app.post("/reenviar-codigo")
 def reenviar_codigo(datos: schemas.ReenviarCodigoIn, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
+    usuario = db.query(models.Usuario).filter(func.lower(models.Usuario.email) == str(datos.email).strip().lower()).first()
     verificacion = None
     if usuario:
         verificacion = db.query(models.VerificacionCorreo).filter(
@@ -688,7 +688,7 @@ def crear_miembro_equipo(
         raise HTTPException(status_code=400, detail="Indica el rol interno: superadmin, moderador o soporte")
     validar_contrasena_segura(datos.password)
 
-    ya_existe = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
+    ya_existe = db.query(models.Usuario).filter(func.lower(models.Usuario.email) == str(datos.email).strip().lower()).first()
     if ya_existe:
         raise HTTPException(status_code=400, detail="Ya existe un usuario con ese correo")
 
@@ -787,7 +787,7 @@ def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
             headers={"Retry-After": str(segundos)},
         )
 
-    usuario = db.query(models.Usuario).filter(models.Usuario.email == datos.email).first()
+    usuario = db.query(models.Usuario).filter(func.lower(models.Usuario.email) == str(datos.email).strip().lower()).first()
 
     if not usuario or not usuario.password_hash or not verify_password(datos.password, usuario.password_hash):
         db.add(models.IntentoLogin(id=uuid.uuid4(), email=correo, fecha=ahora))
