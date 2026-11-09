@@ -14,6 +14,8 @@ export interface Usuario {
   telefono: string | null
   activo: boolean
   fecha_creacion: string
+  // Solo cuidadores: 'pendiente' | 'aprobado' | 'rechazado'
+  estado_validacion?: string | null
 }
 
 export interface LoginResponse {

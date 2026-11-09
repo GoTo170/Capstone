@@ -29,6 +29,18 @@ const ETIQUETA_ROL: Record<string, string> = {
   administrador: 'Administrador',
 }
  
+const ETIQUETA_VALIDACION: Record<string, string> = {
+  pendiente: 'Pendiente de validación',
+  aprobado: 'Aprobado',
+  rechazado: 'Rechazado',
+}
+
+function claseValidacion(estado: string): string {
+  if (estado === 'aprobado') return 'pill ok'
+  if (estado === 'rechazado') return 'pill crit'
+  return 'pill pending'
+}
+
 const CHIPS = [
   { valor: '', texto: 'Todos' },
   { valor: 'adulto_mayor', texto: 'Adulto mayor' },
@@ -263,6 +275,11 @@ export default function Usuarios() {
                   </td>
                   <td>
                     <span className={u.activo ? 'pill ok' : 'pill crit'}>{u.activo ? 'Activo' : 'Suspendido'}</span>
+                    {u.rol === 'cuidador' && u.estado_validacion && (
+                      <span className={claseValidacion(u.estado_validacion)} style={{ marginLeft: 6 }}>
+                        {ETIQUETA_VALIDACION[u.estado_validacion] ?? u.estado_validacion}
+                      </span>
+                    )}
                   </td>
                   <td>{formatearFecha(u.fecha_creacion)}</td>
                   <td className="col-acciones">
@@ -302,6 +319,12 @@ export default function Usuarios() {
             <dd>{ETIQUETA_ROL[accion.usuario.rol] ?? accion.usuario.rol}</dd>
             <dt>Estado</dt>
             <dd>{accion.usuario.activo ? 'Activo' : 'Suspendido'}</dd>
+            {accion.usuario.rol === 'cuidador' && accion.usuario.estado_validacion && (
+              <>
+                <dt>Validación</dt>
+                <dd>{ETIQUETA_VALIDACION[accion.usuario.estado_validacion] ?? accion.usuario.estado_validacion}</dd>
+              </>
+            )}
             <dt>Registro</dt>
             <dd>{formatearFechaCompleta(accion.usuario.fecha_creacion)}</dd>
           </dl>
