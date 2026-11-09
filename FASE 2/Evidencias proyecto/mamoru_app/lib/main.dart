@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -5,6 +8,7 @@ import 'core/api_exception.dart';
 import 'core/sesion.dart';
 import 'features/adulto_mayor/screens/inicio_adulto_mayor_screen.dart';
 import 'features/auth/screens/login_screen.dart';
+import 'features/auth/screens/restablecer_contrasena_screen.dart';
 import 'features/auth/services/auth_service.dart';
 import 'features/cuidador/screens/inicio_cuidador_screen.dart';
 import 'features/familiar/screens/home_screen.dart';
@@ -20,12 +24,70 @@ Future<void> main() async {
   runApp(const MamoruApp());
 }
 
-class MamoruApp extends StatelessWidget {
+class MamoruApp extends StatefulWidget {
   const MamoruApp({super.key});
+
+  @override
+  State<MamoruApp> createState() => _MamoruAppState();
+}
+
+class _MamoruAppState extends State<MamoruApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _suscripcionEnlaces;
+  String? _ultimoToken;
+
+  @override
+  void initState() {
+    super.initState();
+    // Enlaces recibidos con la app ya abierta.
+    _suscripcionEnlaces = _appLinks.uriLinkStream.listen(_alRecibirEnlace);
+    // Enlace con el que se abrió la app (estaba cerrada).
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) _alRecibirEnlace(uri);
+    });
+  }
+
+  @override
+  void dispose() {
+    _suscripcionEnlaces?.cancel();
+    super.dispose();
+  }
+
+  // mamoru://restablecer-contrasena?token=...  ->  pantalla de nueva contraseña.
+  void _alRecibirEnlace(Uri uri) {
+    if (uri.scheme != 'mamoru' || uri.host != 'restablecer-contrasena') return;
+    final token = uri.queryParameters['token'];
+    if (token == null || token.isEmpty || token == _ultimoToken) return;
+    _ultimoToken = token;
+    _abrirRestablecer(token, 0);
+  }
+
+  void _abrirRestablecer(String token, int intento) {
+    final navegador = _navigatorKey.currentState;
+    if (navegador == null) {
+      // Al arrancar en frío el navegador aún no existe: reintenta unos instantes.
+      if (intento < 20) {
+        Future.delayed(
+          const Duration(milliseconds: 250),
+          () => _abrirRestablecer(token, intento + 1),
+        );
+      }
+      return;
+    }
+    navegador
+        .push(
+          MaterialPageRoute(
+            builder: (_) => RestablecerContrasenaScreen(token: token),
+          ),
+        )
+        .then((_) => _ultimoToken = null);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Mamoru',
       debugShowCheckedModeBanner: false,
       // Idioma español para el calendario, botones del sistema, etc.
