@@ -651,7 +651,17 @@ def listar_usuarios(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(requerir_administrador),
 ):
-    return db.query(models.Usuario).all()
+    estados = {
+        p.usuario_id: p.estado_validacion
+        for p in db.query(models.PerfilCuidador).all()
+    }
+    salida = []
+    for u in db.query(models.Usuario).all():
+        item = schemas.UsuarioOut.model_validate(u)
+        if u.rol == "cuidador":
+            item.estado_validacion = estados.get(u.id) or "pendiente"
+        salida.append(item)
+    return salida
 
 @app.patch("/usuarios/{usuario_id}/estado", response_model=schemas.UsuarioOut)
 def cambiar_estado_usuario(

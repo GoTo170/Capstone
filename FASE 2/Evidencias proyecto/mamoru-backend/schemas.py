@@ -37,6 +37,7 @@ class UsuarioOut(BaseModel):
     activo: bool
     fecha_creacion: datetime
     foto_url: Optional[str] = None
+    estado_validacion: Optional[str] = None
 
 
 
