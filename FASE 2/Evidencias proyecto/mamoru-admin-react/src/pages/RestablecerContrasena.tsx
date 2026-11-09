@@ -43,7 +43,8 @@ export default function RestablecerContrasena() {
   const sinDifundir = Boolean((location.state as { sinDifundir?: boolean } | null)?.sinDifundir)
   const token = params.get('token') || ''
   // Pedido hecho desde la app: en un celular Android se intenta abrir la app de Mamoru.
-  const vieneDeLaApp = params.get('app') === '1' && /Android/i.test(navigator.userAgent)
+  const pedidoDesdeLaApp = params.get('app') === '1'
+  const vieneDeLaApp = pedidoDesdeLaApp && /Android/i.test(navigator.userAgent)
   const enlaceApp = `mamoru://restablecer-contrasena?token=${encodeURIComponent(token)}`
 
   const [estado, setEstado] = useState<'validando' | 'invalido' | 'abrirApp' | 'otraVentana' | 'formulario' | 'listo'>('validando')
@@ -81,10 +82,11 @@ export default function RestablecerContrasena() {
 
   // Tras guardar, vuelve solo al login.
   useEffect(() => {
-    if (estado !== 'listo') return
+    // Si el pedido vino de la app, no se lleva al login del panel: se vuelve a la app.
+    if (estado !== 'listo' || pedidoDesdeLaApp) return
     const t = window.setTimeout(() => navigate('/login'), 3000)
     return () => window.clearTimeout(t)
-  }, [estado, navigate])
+  }, [estado, navigate, pedidoDesdeLaApp])
 
   async function manejarEnvio(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -172,6 +174,18 @@ export default function RestablecerContrasena() {
             Continuar en esta ventana
           </button>
         </div>
+      </AuthLayout>
+    )
+  }
+
+  if (estado === 'listo' && pedidoDesdeLaApp) {
+    return (
+      <AuthLayout>
+        <h1>Contraseña actualizada</h1>
+        <p className="auth-sub">
+          Listo. Vuelve a la app de Mamoru e inicia sesión con tu nueva contraseña. Ya puedes cerrar
+          esta página.
+        </p>
       </AuthLayout>
     )
   }
