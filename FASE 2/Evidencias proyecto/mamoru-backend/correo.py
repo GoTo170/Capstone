@@ -123,7 +123,7 @@ def correo_cuidador_rechazado(nombre, motivo):
         [f"Hola {n},", "Revisamos tu perfil de cuidador en Mamoru y por ahora no pudimos aprobarlo.",
          "<p style='margin:0 0 6px'><b>Motivo:</b></p>"
          f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #c0392b;line-height:1.5'>{m}</div>",
-         "Puedes corregir lo indicado desde la app y volver a enviarlo para una nueva revisión."],
+         "Para una nueva revisión, inicia sesión en la app de Mamoru y sube nuevamente tu documento. Si en esa segunda revisión tampoco podemos aprobarlo, tu cuenta quedará desactivada."],
     )
 
 
@@ -200,4 +200,16 @@ def correo_bienvenida_equipo(nombre, rol_interno, email, panel_url, creado_por="
          f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #2f6f5e;line-height:1.5'>"
          f"<b>Tu rol:</b> {etiqueta}<br>En este rol {funcion}</div>",
          consulta],
+    )
+
+
+def correo_cuidador_rechazo_final(nombre, motivo):
+    n = html.escape(nombre or "")
+    m = texto_a_html(motivo or "No se indicó un motivo.")
+    return "Resultado de la nueva revisión de tu perfil", _plantilla(
+        "No pudimos aprobar tu perfil",
+        [f"Hola {n},", "Revisamos nuevamente tu perfil de cuidador en Mamoru y no pudimos aprobarlo. Por eso tu cuenta quedó desactivada.",
+         "<p style='margin:0 0 6px'><b>Motivo:</b></p>"
+         f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #c0392b;line-height:1.5'>{m}</div>",
+         "Si crees que se trata de un error, comunícate con el equipo de Mamoru."],
     )

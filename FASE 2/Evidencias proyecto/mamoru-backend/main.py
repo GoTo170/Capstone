@@ -1044,6 +1044,21 @@ def actualizar_estado_cuidador(
             mensaje=f"Tu perfil de cuidador fue rechazado: {motivo}",
         ))
  
+    # Segundo rechazo (ya había reenviado su documento): la cuenta queda inactiva.
+    rechazo_final = False
+    if datos.estado_validacion == "rechazado" and estado_anterior != "rechazado":
+        if db.query(models.ReenvioDocumentoCuidador).filter(
+            models.ReenvioDocumentoCuidador.usuario_id == perfil.usuario_id
+        ).first():
+            cuenta = db.query(models.Usuario).filter(models.Usuario.id == perfil.usuario_id).first()
+            if cuenta:
+                cuenta.activo = False
+                rechazo_final = True
+    elif datos.estado_validacion == "aprobado":
+        db.query(models.ReenvioDocumentoCuidador).filter(
+            models.ReenvioDocumentoCuidador.usuario_id == perfil.usuario_id
+        ).delete(synchronize_session=False)
+
     db.commit()
     db.refresh(perfil)
 
@@ -1054,13 +1069,17 @@ def actualizar_estado_cuidador(
             if datos.estado_validacion == "aprobado":
                 asunto, cuerpo = correo.correo_cuidador_aprobado(cuidador.nombre)
             else:
-                asunto, cuerpo = correo.correo_cuidador_rechazado(cuidador.nombre, motivo)
+                asunto, cuerpo = (
+                    correo.correo_cuidador_rechazo_final(cuidador.nombre, motivo)
+                    if rechazo_final
+                    else correo.correo_cuidador_rechazado(cuidador.nombre, motivo)
+                )
             correo.enviar_correo(cuidador.email, asunto, cuerpo, adjuntos=adjuntos_correo or None)
 
     if datos.estado_validacion == "aprobado":
         accion = "Aprobó cuidador"
     elif datos.estado_validacion == "rechazado":
-        accion = "Rechazó cuidador"
+        accion = "Rechazó cuidador (cuenta desactivada: segundo rechazo)" if rechazo_final else "Rechazó cuidador"
     else:
         accion = f"Cambió estado de cuidador a {datos.estado_validacion}"
     registrar_auditoria(db, usuario_actual.id, accion, "perfil_cuidador", perfil.id, motivo or None)
@@ -2499,7 +2518,21 @@ def subir_mi_documento(
 
     ruta_anterior = perfil.documento_url
     perfil.documento_url = ruta_nueva
+    reenviado = perfil.estado_validacion == "rechazado"
+    if reenviado:
+        # Volvió a subir su documento tras un rechazo: queda pendiente de una nueva revisión.
+        perfil.estado_validacion = "pendiente"
+        perfil.motivo_rechazo = None
+        if not db.query(models.ReenvioDocumentoCuidador).filter(
+            models.ReenvioDocumentoCuidador.usuario_id == cuidador_actual.id
+        ).first():
+            db.add(models.ReenvioDocumentoCuidador(usuario_id=cuidador_actual.id, fecha=datetime.now()))
     db.commit()
+    if reenviado:
+        notificar_administradores(
+            db, "cuidador_nuevo",
+            f"{cuidador_actual.nombre} reenvió su documento y espera una nueva revisión",
+        )
 
     if ruta_anterior:
         borrar_documento(ruta_anterior)

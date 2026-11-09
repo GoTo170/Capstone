@@ -273,3 +273,11 @@ class RecuperacionContrasena(Base):
     envios = Column(Integer, nullable=False, default=1)
     primer_envio = Column(TIMESTAMP, nullable=False)
     ultimo_envio = Column(TIMESTAMP, nullable=False)
+
+
+class ReenvioDocumentoCuidador(Base):
+    """Cuidador rechazado que volvió a subir su documento (si lo rechazan otra vez, la cuenta queda inactiva)."""
+    __tablename__ = "reenvios_documento_cuidador"
+
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    fecha = Column(TIMESTAMP, nullable=False)
