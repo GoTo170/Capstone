@@ -597,6 +597,8 @@ def recuperar_contrasena(datos: schemas.RecuperarContrasenaIn, db: Session = Dep
 
     base = (os.getenv("PANEL_URL") or "https://capstone-mamoru-admin-react.vercel.app").rstrip("/")
     enlace = f"{base}/restablecer-contrasena?token={token}"
+    if datos.origen == "app":
+        enlace += "&app=1"  # la página intenta abrir la app de Mamoru en el celular
     asunto, cuerpo = correo.correo_restablecer_contrasena(usuario.nombre, enlace, MINUTOS_VIGENCIA_ENLACE)
     correo.enviar_correo(usuario.email, asunto, cuerpo)
     if usuario.rol == "administrador":

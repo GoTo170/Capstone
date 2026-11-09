@@ -809,6 +809,7 @@ class AvisosCorreoCambio(BaseModel):
 
 class RecuperarContrasenaIn(BaseModel):
     email: EmailStr
+    origen: Optional[str] = None  # "app" cuando el pedido viene de la app
 
 
 class RestablecerContrasenaIn(BaseModel):
