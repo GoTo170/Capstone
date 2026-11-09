@@ -3,9 +3,9 @@ import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Modal from './Modal'
 import CampoContrasena from './CampoContrasena'
+import RequisitosContrasena from './RequisitosContrasena'
 import { apiFetch, cerrarSesion } from '../lib/api'
-
-const LARGO_MINIMO = 8
+import { cumpleRequisitos, MENSAJE_REQUISITOS } from '../lib/contrasena'
 
 const estiloCampo: CSSProperties = {
   width: '100%',
@@ -73,8 +73,8 @@ export default function CambiarContrasena() {
   }
 
   async function guardarNueva() {
-    if (nueva.length < LARGO_MINIMO) {
-      setError(`La contraseña nueva debe tener al menos ${LARGO_MINIMO} caracteres`)
+    if (!cumpleRequisitos(nueva)) {
+      setError(MENSAJE_REQUISITOS)
       return
     }
     if (nueva === actual) {
@@ -167,7 +167,7 @@ export default function CambiarContrasena() {
             }}
           >
             <label style={estiloEtiqueta} htmlFor="pw-nueva">
-              Contraseña nueva (mínimo {LARGO_MINIMO} caracteres)
+              Contraseña nueva
             </label>
             <div style={estiloSeparacion}>
               <CampoContrasena
@@ -178,6 +178,7 @@ export default function CambiarContrasena() {
                 value={nueva}
                 onChange={(e) => setNueva(e.target.value)}
               />
+              <RequisitosContrasena valor={nueva} />
             </div>
             <label style={estiloEtiqueta} htmlFor="pw-confirmacion">
               Repite la contraseña nueva

@@ -4,6 +4,8 @@ import { normalizar } from '../lib/busqueda'
 import { nombreCompleto } from '../lib/formato'
 import Modal from './Modal'
 import CampoContrasena from './CampoContrasena'
+import RequisitosContrasena from './RequisitosContrasena'
+import { cumpleRequisitos, MENSAJE_REQUISITOS } from '../lib/contrasena'
 
 interface Props {
   onCerrar: () => void
@@ -67,11 +69,11 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
 
     const claveFinal = automatica ? generada : password
 
+    if (!cumpleRequisitos(claveFinal)) {
+      setError(MENSAJE_REQUISITOS)
+      return
+    }
     if (!automatica) {
-      if (password.length < 8) {
-        setError('La contraseña debe tener al menos 8 caracteres.')
-        return
-      }
       if (password !== confirmar) {
         setError('Las contraseñas no coinciden.')
         return
@@ -217,6 +219,7 @@ export default function FormularioMiembro({ onCerrar, onCreado }: Props) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+              <RequisitosContrasena valor={password} />
             </div>
             <div className="field">
               <label htmlFor="mm-pass2">Confirmar contraseña</label>
