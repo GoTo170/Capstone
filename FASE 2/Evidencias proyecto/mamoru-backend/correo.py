@@ -179,3 +179,25 @@ def correo_contrasena_cambiada(nombre):
         [f"Hola {n},", "La contraseña de tu cuenta de Mamoru se cambió correctamente.",
          "Si no fuiste tú, comunícate con el equipo de Mamoru de inmediato."],
     )
+
+
+_ROLES_EQUIPO = {
+    "superadmin": ("Superadmin", "tendrás acceso total al panel: usuarios, equipo, cuidadores, soporte, reportes y auditoría."),
+    "moderador": ("Moderador de cuidadores", "te encargarás de revisar y validar a los cuidadores, sus documentos, la modalidad puertas adentro, las reseñas y los reportes."),
+    "soporte": ("Soporte / SOS", "te encargarás de atender las alertas SOS, los cambios de datos del adulto mayor, las solicitudes y los reportes."),
+}
+
+
+def correo_bienvenida_equipo(nombre, rol_interno, email, panel_url, creado_por=""):
+    n = html.escape(nombre or "")
+    etiqueta, funcion = _ROLES_EQUIPO.get(rol_interno or "superadmin", _ROLES_EQUIPO["superadmin"])
+    quien = html.escape(creado_por or "")
+    consulta = f"Si tienes dudas, consulta con {quien}, quien creó tu cuenta." if quien else "Si tienes dudas, consulta con quien creó tu cuenta."
+    return "Te damos la bienvenida al equipo de Mamoru", _plantilla(
+        "¡Te damos la bienvenida a Mamoru!",
+        [f"Hola {n},",
+         "Estamos muy contentos de que te sumes al equipo de Mamoru. Te deseamos mucho éxito en esta nueva etapa: tu trabajo ayuda a cuidar mejor a los adultos mayores y a las familias que confían en nosotros.",
+         f"<div style='margin:0 0 14px;padding:10px 14px;background:#f6f6f6;border-left:3px solid #2f6f5e;line-height:1.5'>"
+         f"<b>Tu rol:</b> {etiqueta}<br>En este rol {funcion}</div>",
+         consulta],
+    )

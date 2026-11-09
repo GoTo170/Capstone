@@ -707,6 +707,13 @@ def crear_miembro_equipo(
     detalle = f"{nuevo.nombre} {nuevo.apellido or ''}".strip() + f" ({nuevo.rol_interno})"
     registrar_auditoria(db, usuario_actual.id, "Creó miembro del equipo", "usuario", nuevo.id, detalle)
 
+    # Correo de bienvenida (en segundo plano: si falla, la cuenta igual queda creada).
+    if nuevo.email:
+        base = (os.getenv("PANEL_URL") or "https://capstone-mamoru-admin-react.vercel.app").rstrip("/")
+        quien = f"{usuario_actual.nombre} {usuario_actual.apellido or ''}".strip()
+        asunto, cuerpo = correo.correo_bienvenida_equipo(nuevo.nombre, nuevo.rol_interno, nuevo.email, base, quien)
+        correo.enviar_correo(nuevo.email, asunto, cuerpo)
+
     return nuevo
 
 
