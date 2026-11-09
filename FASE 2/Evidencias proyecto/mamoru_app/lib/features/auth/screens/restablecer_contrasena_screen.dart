@@ -195,6 +195,9 @@ class _RestablecerContrasenaScreenState
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFFBF9),
+      // El teclado se maneja con el relleno del scroll (abajo), así la pantalla
+      // no se encoge ni queda cortada si Android informa un teclado fantasma.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [
@@ -212,9 +215,11 @@ class _RestablecerContrasenaScreenState
                   : _enlaceVigente == false
                       ? _buildEnlaceInvalido()
                       : SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 20,
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  20,
+                  24,
+                  20 + MediaQuery.of(context).viewInsets.bottom,
                 ),
                 child: Form(
                   key: _formKey,
