@@ -42,8 +42,11 @@ export default function RestablecerContrasena() {
   const location = useLocation()
   const sinDifundir = Boolean((location.state as { sinDifundir?: boolean } | null)?.sinDifundir)
   const token = params.get('token') || ''
+  // Pedido hecho desde la app: en un celular Android se intenta abrir la app de Mamoru.
+  const vieneDeLaApp = params.get('app') === '1' && /Android/i.test(navigator.userAgent)
+  const enlaceApp = `mamoru://restablecer-contrasena?token=${encodeURIComponent(token)}`
 
-  const [estado, setEstado] = useState<'validando' | 'invalido' | 'otraVentana' | 'formulario' | 'listo'>('validando')
+  const [estado, setEstado] = useState<'validando' | 'invalido' | 'abrirApp' | 'otraVentana' | 'formulario' | 'listo'>('validando')
   const [nueva, setNueva] = useState('')
   const [confirmacion, setConfirmacion] = useState('')
   const [error, setError] = useState('')
@@ -60,6 +63,7 @@ export default function RestablecerContrasena() {
       .then(async (r) => {
         if (!activo) return
         if (!r.valido) return setEstado('invalido')
+        if (vieneDeLaApp && !sinDifundir) return setEstado('abrirApp')
         // Abierto desde el correo: si la ventana donde se pidió el cambio sigue abierta, sigue allí.
         const laTomoOtra = sinDifundir ? false : await ofrecerALaVentanaAnterior(token)
         if (activo) setEstado(laTomoOtra ? 'otraVentana' : 'formulario')
@@ -68,7 +72,12 @@ export default function RestablecerContrasena() {
     return () => {
       activo = false
     }
-  }, [token, sinDifundir])
+  }, [token, sinDifundir, vieneDeLaApp])
+
+  // Intenta abrir la app apenas se muestra esa pantalla (si no se abre, queda el botón).
+  useEffect(() => {
+    if (estado === 'abrirApp') window.location.href = enlaceApp
+  }, [estado, enlaceApp])
 
   // Tras guardar, vuelve solo al login.
   useEffect(() => {
@@ -125,6 +134,26 @@ export default function RestablecerContrasena() {
         </Link>
         <div className="auth-footer">
           <Link to="/login">← Volver a iniciar sesión</Link>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  if (estado === 'abrirApp') {
+    return (
+      <AuthLayout>
+        <h1>Abre la app de Mamoru</h1>
+        <p className="auth-sub">
+          Correo confirmado. Estamos abriendo la app para que crees tu nueva contraseña. Si no se
+          abre sola, presiona el botón.
+        </p>
+        <a href={enlaceApp} className="auth-submit auth-submit-link">
+          Abrir la app de Mamoru
+        </a>
+        <div className="auth-footer">
+          <button type="button" className="auth-link" onClick={() => setEstado('formulario')}>
+            No tengo la app: crear la contraseña aquí
+          </button>
         </div>
       </AuthLayout>
     )
