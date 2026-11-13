@@ -258,10 +258,15 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
       mensaje = 'Se cancelará tu solicitud pendiente.';
       boton = 'Cancelar solicitud';
     } else {
-      titulo = 'Dejar de ofrecer puertas adentro';
-      mensaje = 'Dejarás de ofrecer esta modalidad de inmediato.';
-      boton = 'Dejar de ofrecer';
+      titulo = 'Desactivar puertas adentro';
+      mensaje = 'Si la desactivas, las familias dejarán de ver esta modalidad en tu perfil y no podrán '
+          'solicitártela.\n\n'
+          'Si más adelante quieres volver a activarla, deberás enviar una nueva solicitud y esperar '
+          'la aprobación del administrador.\n\n'
+          '¿Seguro que quieres desactivarla?';
+      boton = 'Sí, desactivar';
     }
+    final esDesactivar = !quiere && !pendiente;
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -270,8 +275,15 @@ class _PerfilCuidadorScreenState extends State<PerfilCuidadorScreen> {
         title: Text(titulo),
         content: Text(mensaje),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(contexto, false), child: const Text('Volver')),
-          FilledButton(onPressed: () => Navigator.pop(contexto, true), child: Text(boton)),
+          TextButton(
+            onPressed: () => Navigator.pop(contexto, false),
+            child: Text(esDesactivar ? 'Cancelar' : 'Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(contexto, true),
+            style: esDesactivar ? FilledButton.styleFrom(backgroundColor: Colors.red) : null,
+            child: Text(boton),
+          ),
         ],
       ),
     );
