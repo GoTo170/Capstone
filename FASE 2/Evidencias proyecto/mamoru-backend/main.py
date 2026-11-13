@@ -7,6 +7,9 @@ import secrets
 import hmac
 import hashlib
 import json
+import secrets as _secrets
+import time as _tiempo
+from fastapi import Request as _Request
 from datetime import date, datetime, timedelta, time, timezone
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -48,9 +51,18 @@ push.registrar_eventos()
 
 app = FastAPI(title="Mamoru API")
 
+ORIGENES_PERMITIDOS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ORIGINS",
+        "https://capstone-mamoru-admin-react.vercel.app,http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ORIGENES_PERMITIDOS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -250,13 +262,58 @@ EDAD_MINIMA_ADULTO_MAYOR = 60
 MINUTOS_SESION_MOVIL = 60 * 24 * 7           # familiar y cuidador: 7 días
 MINUTOS_SESION_ADULTO_MAYOR = 60 * 24 * 365  # adulto mayor: 1 año (no tiene contraseña)
 
+# Intentos fallidos al canjear un código, por conexión (se guarda en memoria del servidor).
+_INTENTOS_CANJE: dict = {}
+MAX_INTENTOS_CANJE = 8
+VENTANA_CANJE_SEGUNDOS = 10 * 60
+
+
+def _ip_cliente(request) -> str:
+    reenviado = request.headers.get("x-forwarded-for", "")
+    if reenviado:
+        return reenviado.split(",")[0].strip()
+    return request.client.host if request.client else "desconocida"
+
+
+def _fallos_recientes_canje(ip: str) -> list:
+    ahora = _tiempo.time()
+    recientes = [x for x in _INTENTOS_CANJE.get(ip, []) if ahora - x < VENTANA_CANJE_SEGUNDOS]
+    if recientes:
+        _INTENTOS_CANJE[ip] = recientes
+    else:
+        _INTENTOS_CANJE.pop(ip, None)
+    return recientes
+
+
+MAX_INTENTOS_CANJE_GLOBAL = 60
+
+
+def _revisar_bloqueo_canje(ip: str):
+    if (
+        len(_fallos_recientes_canje(ip)) >= MAX_INTENTOS_CANJE
+        or len(_fallos_recientes_canje("__global__")) >= MAX_INTENTOS_CANJE_GLOBAL
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+        )
+
+
+def _registrar_fallo_canje(ip: str):
+    _INTENTOS_CANJE.setdefault(ip, []).append(_tiempo.time())
+    _INTENTOS_CANJE.setdefault("__global__", []).append(_tiempo.time())
+
 
 def generar_codigo_invitacion(db) -> str:
     """Código con el formato de la app: 4 letras + guion + 4 números (ej: PRVP-9290).
     No usa I ni O para que no se confundan con 1 y 0."""
     letras = "ABCDEFGHJKLMNPQRSTUVWXYZ"
     while True:
-        codigo = "".join(random.choices(letras, k=4)) + "-" + "".join(random.choices(string.digits, k=4))
+        codigo = (
+            "".join(_secrets.choice(letras) for _ in range(4))
+            + "-"
+            + "".join(_secrets.choice(string.digits) for _ in range(4))
+        )
         ya_existe = db.query(models.InvitacionVinculacion).filter(
             models.InvitacionVinculacion.codigo == codigo
         ).first()
@@ -1216,7 +1273,14 @@ def crear_adulto_mayor(
 
 
 @app.post("/invitaciones/canjear", response_model=schemas.Token)
-def canjear_invitacion(datos: schemas.CanjearCodigoRequest, db: Session = Depends(get_db)):
+def canjear_invitacion(
+    datos: schemas.CanjearCodigoRequest,
+    request: _Request,
+    db: Session = Depends(get_db),
+):
+    ip = _ip_cliente(request)
+    _revisar_bloqueo_canje(ip)
+
     invitacion = (
         db.query(models.InvitacionVinculacion)
         .filter(models.InvitacionVinculacion.codigo == datos.codigo.strip().upper())
@@ -1225,16 +1289,20 @@ def canjear_invitacion(datos: schemas.CanjearCodigoRequest, db: Session = Depend
     )
 
     if not invitacion:
+        _registrar_fallo_canje(ip)
         raise HTTPException(status_code=404, detail="Código inválido")
 
     if invitacion.estado != "pendiente":
+        _registrar_fallo_canje(ip)
         raise HTTPException(status_code=400, detail="Este código ya fue utilizado o revocado")
 
     if invitacion.expira_en < datetime.now():
         invitacion.estado = "expirado"
         db.commit()
+        _registrar_fallo_canje(ip)
         raise HTTPException(status_code=400, detail="Este código ya expiró")
 
+    _INTENTOS_CANJE.pop(ip, None)
     invitacion.estado = "usado"
     invitacion.utilizado_en = datetime.now()
     db.commit()
